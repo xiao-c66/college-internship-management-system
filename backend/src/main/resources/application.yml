@@ -1,0 +1,70 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: college-internship-backend
+  profiles:
+    active: dev
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+# 系统基础全局配置 (阶段3骨架默认值，由sys_config动态覆盖)
+system:
+  app:
+    name: 高校实习全过程管理系统
+    version: 1.0.0-SNAPSHOT
+    stage: PHASE_7_ACCEPTED
+
+# 阶段6 实习周报与过程指导参数配置 (部署可调整配置·待业务方确认)
+internship:
+  weekly:
+    min-content-length: 15
+    min-return-reason-length: 10
+    min-review-comment-length: 10
+    min-guidance-length: 15
+    min-feedback-length: 5
+    max-export-rows: 5000
+    max-export-days: 365
+    export-rate-limit-seconds: 10
+    guidance-voucher-max-size-mb: 10
+    min-task-duration-days: 0
+    system-timezone: "Asia/Shanghai"
+  phase7:
+    material:
+      max-submit-versions: 5
+      min-midterm-summary-length: 500
+      max-file-size-mb: 10
+    inspect:
+      min-rectify-length: 15
+      min-rectify-comment-length: 10
+    warn:
+      scan-rate-limit-seconds: 10
+      handling-timeout-days: 3
+    score:
+      min-summary-length: 1500
+      min-appeal-reason-length: 10
+      min-arbitrate-comment-length: 10
+      default-publicity-days: 5
+      grade-rules:
+        excellent-min: 90.00
+        good-min: 80.00
+        medium-min: 70.00
+        pass-min: 60.00
+    archive:
+      storage-dir: "data/archives"
+      temp-dir: "data/archives/temp"
+      min-weekly-report-rate: 80.00
+      min-guidance-count: 2
+      special-unlock-duration-hours: 24
+      max-single-attachment-size-mb: 10
+      export-max-bundle-size-mb: 100
+      export-rate-limit-seconds: 10
+

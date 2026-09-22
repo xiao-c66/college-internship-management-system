@@ -1,0 +1,139 @@
+{
+  "testedRoutes": [],
+  "testedAliases": [
+    {
+      "role": "student",
+      "path": "/student/process/materials",
+      "currentUrl": "http://localhost:3000/student/process/materials",
+      "pageTitle": "阶段材料与总结报告 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "student",
+      "path": "/student/completion/rectify",
+      "currentUrl": "http://localhost:3000/student/completion/rectify",
+      "pageTitle": "中期检查与限期整改 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "student",
+      "path": "/student/warnings",
+      "currentUrl": "http://localhost:3000/student/warnings",
+      "pageTitle": "过程预警与学生申辩 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "student",
+      "path": "/student/completion/score",
+      "currentUrl": "http://localhost:3000/student/completion/score",
+      "pageTitle": "五维成绩评定与申诉 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "student",
+      "path": "/student/completion/archive",
+      "currentUrl": "http://localhost:3000/student/completion/archive",
+      "pageTitle": "电子档案归档与锁定 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "teacher",
+      "path": "/teacher/audit/materials",
+      "currentUrl": "http://localhost:3000/teacher/audit/materials",
+      "pageTitle": "阶段材料与总结报告 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "teacher",
+      "path": "/teacher/supervision/inspect",
+      "currentUrl": "http://localhost:3000/teacher/supervision/inspect",
+      "pageTitle": "中期检查与限期整改 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "teacher",
+      "path": "/teacher/warn/tickets",
+      "currentUrl": "http://localhost:3000/teacher/warn/tickets",
+      "pageTitle": "预警工单协同中心 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "teacher",
+      "path": "/teacher/score/evaluate",
+      "currentUrl": "http://localhost:3000/teacher/score/evaluate",
+      "pageTitle": "五维成绩评定与申诉 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "teacher",
+      "path": "/archive/manage",
+      "currentUrl": "http://localhost:3000/archive/manage",
+      "pageTitle": "电子档案归档与锁定 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "deptadmin",
+      "path": "/dept/quality/inspections",
+      "currentUrl": "http://localhost:3000/dept/quality/inspections",
+      "pageTitle": "中期检查与限期整改 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "deptadmin",
+      "path": "/dept/quality/warnings",
+      "currentUrl": "http://localhost:3000/dept/quality/warnings",
+      "pageTitle": "预警工单协同中心 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "deptadmin",
+      "path": "/dept/decision/score-appeals",
+      "currentUrl": "http://localhost:3000/dept/decision/score-appeals",
+      "pageTitle": "五维成绩评定与申诉 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "deptadmin",
+      "path": "/dept/archive/management",
+      "currentUrl": "http://localhost:3000/dept/archive/management",
+      "pageTitle": "电子档案归档与锁定 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "admin",
+      "path": "/admin/archives/all",
+      "currentUrl": "http://localhost:3000/admin/archives/all",
+      "pageTitle": "电子档案归档与锁定 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "admin",
+      "path": "/score/manage",
+      "currentUrl": "http://localhost:3000/score/manage",
+      "pageTitle": "五维成绩评定与申诉 - 高校实习全过程管理系统",
+      "status": "PASS"
+    },
+    {
+      "role": "admin",
+      "path": "/warn/tickets",
+      "currentUrl": "http://localhost:3000/warn/tickets",
+      "pageTitle": "预警工单协同中心 - 高校实习全过程管理系统",
+      "status": "PASS"
+    }
+  ],
+  "testedRoleGuards": [
+    {
+      "role": "student",
+      "target": "/warn/tickets",
+      "redirectedTo": "http://localhost:3000/403",
+      "passed": true
+    },
+    {
+      "role": "teacher",
+      "target": "/warn/student",
+      "redirectedTo": "http://localhost:3000/403",
+      "passed": true
+    }
+  ],
+  "consoleErrors": []
+}

@@ -1,0 +1,30 @@
+# ==============================================================================
+# 本地开发环境配置示例文件 (application-dev.yml.example)
+# 使用方法：复制本文件为 application-dev.yml 并填入本地实际环境变量，或通过外部环境变量注入
+# ==============================================================================
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 示例: jdbc:mysql://localhost:3306/internship_db?...
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:internship_db}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_database_password_here}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      initialization-fail-timeout: -1
+
+security:
+  jwt:
+    # 示例: 必须至少256位（32字符以上）安全字符串
+    secret-key: ${JWT_SECRET_KEY:your_jwt_secret_key_at_least_256_bits_length_here}
+    expiration-seconds: 7200
+    token-prefix: "Bearer "
+    header-string: "Authorization"
+
+upload:
+  # 示例: 本地实际存储目录 (如 D:/devlop/IDEA/college-internship-management-system/uploads/)
+  base-path: ${UPLOAD_BASE_PATH:your_local_upload_path_here}
+  # 示例: 单文件最大上限 MB (根据校方部署参数设定，如 20)
+  max-size-mb: ${UPLOAD_MAX_SIZE_MB:20}
