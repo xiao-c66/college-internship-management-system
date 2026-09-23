@@ -205,6 +205,20 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '电子档案归档与锁定 - 高校实习全过程管理系统', roles: ['STUDENT', 'TEACHER', 'DEPT_ADMIN', 'SYS_ADMIN'] }
       },
       {
+        path: 'admin/system/notice',
+        name: 'NoticeManage',
+        alias: ['/admin/system/notice', 'system/notice'],
+        component: () => import('@/views/notice/NoticeManage.vue'),
+        meta: { title: '教学通知公告管理 - 高校实习全过程管理系统', roles: ['DEPT_ADMIN', 'SYS_ADMIN'] }
+      },
+      {
+        path: 'admin/system/monitor',
+        name: 'ServerMonitor',
+        alias: ['/admin/system/monitor', 'system/monitor'],
+        component: () => import('@/views/monitor/ServerMonitor.vue'),
+        meta: { title: '系统监控与安全审计 - 高校实习全过程管理系统', roles: ['SYS_ADMIN'] }
+      },
+      {
         path: 'dev-diag',
         name: 'DevDiagnostic',
         component: () => import('@/views/diagnostic/DevDiagnosticView.vue'),

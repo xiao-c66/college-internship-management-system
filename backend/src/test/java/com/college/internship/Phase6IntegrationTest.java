@@ -9,9 +9,12 @@ import com.college.internship.service.IAuthService;
 import com.college.internship.vo.CaptchaVO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +27,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,12 +43,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 阶段6核心业务集成测试：
  * 严格对应方案设计的 18 项无遗漏自动化集成测试 (TEST-W01 ~ TEST-W18)
- * 覆盖周报前置准入、草稿暂存、业务阈值校验、按期与逾期计算、防重、越权防御、退回重提版本自增、
- * NOTICE-006、NOTICE-012、过程走访登记、API-067 CAS条件更新防重、API-066 EasyExcel导出及院系隔离。
+ * 采用专用测试数据隔离方案：创建唯一专用测试任务与专用测试学生，严禁使用正式业务 task_id=1 和 student_id=4
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class Phase6IntegrationTest {
 
     @Autowired
@@ -64,20 +68,94 @@ public class Phase6IntegrationTest {
     private String teacherToken;
     private String studentToken;
 
-    @BeforeEach
-    void setUp() throws Exception {
+    // 阶段6隔离专用测试实体标识 (落实要求4、5)
+    private Long testTaskId;
+    private Long testStudentId;
+    private String testStudentUsername;
+
+    // 阶段6基准数据快照（包含记录数量、主键清单与关键字段完整比对，落实要求7）
+    private int baselineTaskCount;
+    private int baselineUserCount;
+    private int baselineReportCount;
+    private int baselineGuidanceCount;
+    private List<Map<String, Object>> baselineTasks;
+    private List<Map<String, Object>> baselineTaskStudents;
+    private List<Map<String, Object>> baselineUsers;
+    private List<Map<String, Object>> baselineReports;
+    private List<Map<String, Object>> baselineGuidances;
+    private List<Map<String, Object>> baselineApplies;
+
+    @BeforeAll
+    void initSuite() throws Exception {
+        // 测试启动防呆校验：必须连接独立测试数据库 internship_db_test
+        String currentDb = jdbcTemplate.queryForObject("SELECT DATABASE()", String.class);
+        if (!"internship_db_test".equalsIgnoreCase(currentDb)) {
+            throw new IllegalStateException("【严重安全阻断】当前测试数据库为: [" + currentDb + "]，非 'internship_db_test'！已强制终止测试！");
+        }
+
+        // 1. 基准快照 (包括记录数量、主键清单与关键字段完整比对，落实要求7)
+        baselineTaskCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_task", Integer.class);
+        baselineUserCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_user", Integer.class);
+        baselineReportCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_weekly_report", Integer.class);
+        baselineGuidanceCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_guidance_record", Integer.class);
+
+        baselineTasks = jdbcTemplate.queryForList("SELECT id, task_code, task_name, status FROM internship_task ORDER BY id");
+        baselineTaskStudents = jdbcTemplate.queryForList("SELECT task_id, student_id FROM internship_task_student ORDER BY task_id, student_id");
+        baselineUsers = jdbcTemplate.queryForList("SELECT id, username FROM sys_user ORDER BY id");
+        baselineReports = jdbcTemplate.queryForList("SELECT id, task_id, student_id, week_number, status FROM internship_weekly_report ORDER BY id");
+        baselineGuidances = jdbcTemplate.queryForList("SELECT id, task_id, student_id, guidance_type FROM internship_guidance_record ORDER BY id");
+        baselineApplies = jdbcTemplate.queryForList("SELECT id, task_id, student_id, apply_status FROM internship_apply ORDER BY id");
+
+        // 2. 落实要求4、5：创建阶段6专用测试学生与专用测试任务，严禁使用正式业务 task_id=1 和 student_id=4
+        long suffix = System.currentTimeMillis() % 1000000;
+        testStudentUsername = "test_stu_p6_" + suffix;
+        String studentNumber = "STU_P6_" + suffix;
+
+        jdbcTemplate.update(
+                "INSERT INTO sys_user (username, password, real_name, user_type, user_number, dept_id, major_id, class_id, status, is_deleted) " +
+                "VALUES (?, '$2a$10$yPGsnNqEVplIMFJzfBoDzO1q9bbT7fcHOAunO48kCu7kJwfRbRDf6', 'P6测试学生', 'STUDENT', ?, 1, 1, 1, 1, 0)",
+                testStudentUsername, studentNumber
+        );
+        testStudentId = jdbcTemplate.queryForObject("SELECT id FROM sys_user WHERE username = ?", Long.class, testStudentUsername);
+        jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?, 4)", testStudentId);
+
+        String testTaskCode = "TASK_P6_" + suffix;
+        jdbcTemplate.update(
+                "INSERT INTO internship_task (task_code, task_name, dept_id, academic_year, semester, internship_mode, start_date, end_date, status, weekly_frequency, weekly_deadline_day, " +
+                "weight_enterprise, weight_teacher_process, weight_weekly_report, weight_stage_material, weight_summary, grade_rules_json) " +
+                "VALUES (?, ?, 1, '2025-2026', 2, 'DISTRIBUTED', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 90 DAY), 'PUBLISHED', 'WEEKLY', 7, " +
+                "20.00, 20.00, 20.00, 20.00, 20.00, NULL)",
+                testTaskCode, "阶段6隔离专用测试任务_" + suffix
+        );
+        testTaskId = jdbcTemplate.queryForObject("SELECT id FROM internship_task WHERE task_code = ?", Long.class, testTaskCode);
+
+        jdbcTemplate.update("INSERT INTO internship_task_major (task_id, major_id) VALUES (?, 1)", testTaskId);
+        jdbcTemplate.update("INSERT INTO internship_task_class (task_id, class_id) VALUES (?, 1)", testTaskId);
+        jdbcTemplate.update(
+                "INSERT INTO internship_task_student (task_id, student_id, student_number, student_name, class_id, teacher_id, safety_status) " +
+                "VALUES (?, ?, ?, 'P6测试学生', 1, 3, 'COMPLETED')",
+                testTaskId, testStudentId, studentNumber
+        );
+
         adminToken = obtainToken("admin");
         deptAdminToken = obtainToken("deptadmin");
         teacherToken = obtainToken("teacher");
-        studentToken = obtainToken("student");
+        studentToken = obtainToken(testStudentUsername);
+    }
 
-        // 幂等清理阶段6测试产生的数据
-        jdbcTemplate.execute("DELETE FROM internship_weekly_report_history");
-        jdbcTemplate.execute("DELETE FROM internship_weekly_report");
-        jdbcTemplate.execute("DELETE FROM internship_guidance_record");
+    @BeforeEach
+    void setUp() throws Exception {
+        // 专用测试数据隔离方案：严格限定仅清理专用测试学生在专用测试任务下的周报、指导与申请记录，严禁触碰正式业务数据
+        jdbcTemplate.execute("DELETE FROM internship_weekly_report_history WHERE report_id IN (SELECT id FROM internship_weekly_report WHERE student_id = " + testStudentId + " AND task_id = " + testTaskId + ")");
+        jdbcTemplate.execute("DELETE FROM internship_weekly_report WHERE student_id = " + testStudentId + " AND task_id = " + testTaskId);
+        jdbcTemplate.execute("DELETE FROM internship_guidance_record WHERE task_id = " + testTaskId);
+        jdbcTemplate.execute("DELETE FROM internship_apply WHERE student_id = " + testStudentId + " AND task_id = " + testTaskId);
 
-        // 确保学生4拥有基础圈定绑定关系 (任务1, 指导教师3, 院系1)
-        jdbcTemplate.execute("UPDATE internship_task_student SET teacher_id = 3 WHERE student_id = 4 AND task_id = 1");
+        // 恢复测试任务基础配置
+        jdbcTemplate.execute("UPDATE internship_task SET " +
+                "start_date = CURRENT_DATE, end_date = DATE_ADD(CURRENT_DATE, INTERVAL 90 DAY), " +
+                "weekly_frequency = 'WEEKLY', weekly_deadline_day = 7 WHERE id = " + testTaskId);
+        jdbcTemplate.execute("UPDATE internship_task_student SET teacher_id = 3 WHERE student_id = " + testStudentId + " AND task_id = " + testTaskId);
     }
 
     private String obtainToken(String username) throws Exception {
@@ -102,18 +180,18 @@ public class Phase6IntegrationTest {
         jdbcTemplate.execute("DELETE FROM internship_apply WHERE task_id = " + taskId + " AND student_id = " + studentId);
         jdbcTemplate.execute("INSERT INTO internship_apply (task_id, student_id, student_number, student_name, dept_id, major_id, class_id, " +
                 "company_name, job_position, job_address, company_contact_person, company_contact_phone, start_date, end_date, internship_mode, apply_status, is_locked, is_deleted) " +
-                "VALUES (" + taskId + ", " + studentId + ", '2021003011', '张晓峰', 1, 1, 1, " +
+                "VALUES (" + taskId + ", " + studentId + ", 'STU_P6_" + studentId + "', 'P6测试学生', 1, 1, 1, " +
                 "'某某网络科技有限公司', 'Java后端实习生', '杭州市滨江区科技园', '王经理', '13800138000', '2026-03-01', '2026-06-30', 'CENTRALIZED', 'APPROVED', 1, 0)");
     }
 
     @Test
     @DisplayName("TEST-W01: 前置准入拦截：未审核通过实习申报的学生尝试提交周报 -> 400")
     void testW01_PreRequisiteApplyCheck() throws Exception {
-        // 清理学生4的实习申报，使其处于未申报状态
-        jdbcTemplate.execute("DELETE FROM internship_apply WHERE task_id = 1 AND student_id = 4");
+        // 清理专用测试学生的实习申报，使其处于未申报状态
+        jdbcTemplate.execute("DELETE FROM internship_apply WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("SUBMIT")
                 .workContent("本周完成系统骨架代码编写和项目环境配置")
@@ -134,10 +212,10 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W02: 草稿暂存与 NULL 兼容：部分填写保存周报草稿 -> 200, 状态为 DRAFT")
     void testW02_SaveDraftWithNullFields() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("DRAFT")
                 .workContent("初步记录本周日常") // 仅填写一项，其余全为 NULL
@@ -156,10 +234,10 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W03: 业务阈值校验：正式提交周报时某项内容少于15字 -> 400")
     void testW03_ContentMinLengthValidation() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("SUBMIT")
                 .workContent("太少了") // 3个字，低于默认15字门槛
@@ -180,13 +258,13 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W04: 周报按期提交：在截止日前正常提交周报 -> SUBMITTED, is_overdue=0")
     void testW04_SubmitOnTime() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
-        // 设置任务1为 WEEKLY，截止日期为未来
-        jdbcTemplate.execute("UPDATE internship_task SET start_date = CURRENT_DATE, end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'WEEKLY', weekly_deadline_day = 7 WHERE id = 1");
+        // 设置测试任务为 WEEKLY，截止日期为未来
+        jdbcTemplate.execute("UPDATE internship_task SET start_date = CURRENT_DATE, end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'WEEKLY', weekly_deadline_day = 7 WHERE id = " + testTaskId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("SUBMIT")
                 .workContent("本周完成系统骨架代码编写和项目环境配置与数据库结构设计")
@@ -206,20 +284,20 @@ public class Phase6IntegrationTest {
                 .andExpect(jsonPath("$.data.overdueDays").value(0));
 
         // 验证首次正式提交必须写入 SUBMIT 历史快照
-        Integer submitHistoryCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_weekly_report_history WHERE task_id = 1 AND student_id = 4 AND action = 'SUBMIT'", Integer.class);
+        Integer submitHistoryCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_weekly_report_history WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId + " AND action = 'SUBMIT'", Integer.class);
         assertEquals(1, submitHistoryCount);
     }
 
     @Test
     @DisplayName("TEST-W05: 双周与逾期提交：BIWEEKLY 逾期补交周报 -> SUBMITTED, is_overdue=1, 逾期天数精确计算")
     void testW05_BiweeklyOverdueSubmit() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
-        // 设置任务起始日期为 30 天前，周期为 BIWEEKLY，第1期早已经截止
-        jdbcTemplate.execute("UPDATE internship_task SET start_date = DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY), end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'BIWEEKLY', weekly_deadline_day = 7 WHERE id = 1");
+        // 设置测试任务起始日期为 30 天前，周期为 BIWEEKLY，第1期早已经截止
+        jdbcTemplate.execute("UPDATE internship_task SET start_date = DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY), end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'BIWEEKLY', weekly_deadline_day = 7 WHERE id = " + testTaskId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1) // 第1期，截止时刻在过去
                 .action("SUBMIT")
                 .workContent("本双周完成系统骨架代码编写和项目环境配置与数据库结构设计")
@@ -242,11 +320,11 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W06: 防重提交：同一学生在同一任务同一周次尝试重复提交 -> 400 阻断")
     void testW06_DuplicateSubmitPrevention() throws Exception {
-        prepareApprovedApply(1L, 4L);
-        jdbcTemplate.execute("UPDATE internship_task SET start_date = CURRENT_DATE, end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'WEEKLY', weekly_deadline_day = 7 WHERE id = 1");
+        prepareApprovedApply(testTaskId, testStudentId);
+        jdbcTemplate.execute("UPDATE internship_task SET start_date = CURRENT_DATE, end_date = DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), weekly_frequency = 'WEEKLY', weekly_deadline_day = 7 WHERE id = " + testTaskId);
 
         WeeklyReportSaveDTO dto = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("SUBMIT")
                 .workContent("本周完成系统骨架代码编写和项目环境配置与数据库结构设计")
@@ -275,13 +353,13 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W07: 越权防御：教师 A 尝试批阅分配给教师 B 的学生周报 -> 403")
     void testW07_UnauthorizedTeacherReview() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         // 插入一条由教师999负责的学生周报
         jdbcTemplate.execute("INSERT INTO internship_weekly_report (task_id, student_id, teacher_id, dept_id, week_number, start_date, end_date, deadline_time, status, work_content, work_summary, problem_encountered, next_week_plan, version, is_deleted) " +
-                "VALUES (1, 4, 999, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
+                "VALUES (" + testTaskId + ", " + testStudentId + ", 999, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
 
-        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = 1 AND student_id = 4 AND week_number = 1", Long.class);
+        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId + " AND week_number = 1", Long.class);
 
         WeeklyReportReviewDTO reviewDTO = WeeklyReportReviewDTO.builder()
                 .action("APPROVE")
@@ -302,13 +380,13 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W08: 退回校验：教师退回周报时退回原因低于10字 -> 400")
     void testW08_ReturnReasonMinLengthValidation() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         // 插入属于教师3的待批阅周报
         jdbcTemplate.execute("INSERT INTO internship_weekly_report (task_id, student_id, teacher_id, dept_id, week_number, start_date, end_date, deadline_time, status, work_content, work_summary, problem_encountered, next_week_plan, version, is_deleted) " +
-                "VALUES (1, 4, 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
+                "VALUES (" + testTaskId + ", " + testStudentId + ", 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
 
-        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = 1 AND student_id = 4 AND week_number = 1", Long.class);
+        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId + " AND week_number = 1", Long.class);
 
         WeeklyReportReviewDTO returnDTO = WeeklyReportReviewDTO.builder()
                 .action("RETURN")
@@ -327,12 +405,12 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W09: NOTICE-006: 教师合规退回周报 -> RETURNED，快照入历史表并留痕")
     void testW09_TeacherReturnReportNotice() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         jdbcTemplate.execute("INSERT INTO internship_weekly_report (task_id, student_id, teacher_id, dept_id, week_number, start_date, end_date, deadline_time, status, work_content, work_summary, problem_encountered, next_week_plan, version, is_deleted) " +
-                "VALUES (1, 4, 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
+                "VALUES (" + testTaskId + ", " + testStudentId + ", 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
 
-        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = 1 AND student_id = 4 AND week_number = 1", Long.class);
+        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId + " AND week_number = 1", Long.class);
 
         WeeklyReportReviewDTO returnDTO = WeeklyReportReviewDTO.builder()
                 .action("RETURN")
@@ -362,14 +440,14 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W10: 版本递增重提：学生修改被退回的周报重新提交 -> SUBMITTED, version 自增为 2")
     void testW10_ResubmitReturnedReportVersionIncrement() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         // 插入退回状态的周报 (version=1)
         jdbcTemplate.execute("INSERT INTO internship_weekly_report (task_id, student_id, teacher_id, dept_id, week_number, start_date, end_date, deadline_time, status, work_content, work_summary, problem_encountered, next_week_plan, version, is_deleted) " +
-                "VALUES (1, 4, 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'RETURNED', '原工作内容正常记录充足字数标准', '原收获体会正常记录充足字数标准', '原疑难问题正常记录充足字数标准', '原下周计划正常记录充足字数标准', 1, 0)");
+                "VALUES (" + testTaskId + ", " + testStudentId + ", 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'RETURNED', '原工作内容正常记录充足字数标准', '原收获体会正常记录充足字数标准', '原疑难问题正常记录充足字数标准', '原下周计划正常记录充足字数标准', 1, 0)");
 
         WeeklyReportSaveDTO resubmitDTO = WeeklyReportSaveDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .weekNumber(1)
                 .action("SUBMIT")
                 .workContent("整改后详细记录本周在企业完成的核心需求开发工作任务")
@@ -391,12 +469,12 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W11: NOTICE-012: 教师合规批阅周报（打分+评语） -> REVIEWED, 锁定只读")
     void testW11_TeacherApproveReport() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         jdbcTemplate.execute("INSERT INTO internship_weekly_report (task_id, student_id, teacher_id, dept_id, week_number, start_date, end_date, deadline_time, status, work_content, work_summary, problem_encountered, next_week_plan, version, is_deleted) " +
-                "VALUES (1, 4, 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
+                "VALUES (" + testTaskId + ", " + testStudentId + ", 3, 1, 1, '2026-03-01', '2026-03-07', '2026-03-07 23:59:59', 'SUBMITTED', '工作内容正常记录充足字数标准', '收获体会正常记录充足字数标准', '疑难问题正常记录充足字数标准', '下周计划正常记录充足字数标准', 1, 0)");
 
-        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = 1 AND student_id = 4 AND week_number = 1", Long.class);
+        Long reportId = jdbcTemplate.queryForObject("SELECT id FROM internship_weekly_report WHERE task_id = " + testTaskId + " AND student_id = " + testStudentId + " AND week_number = 1", Long.class);
 
         WeeklyReportReviewDTO approveDTO = WeeklyReportReviewDTO.builder()
                 .action("APPROVE")
@@ -421,11 +499,11 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W12: 教师合规登记实地走访记录与附件URL -> 200, 班级与实习单位真实关联完整落库")
     void testW12_TeacherCreateGuidanceRecord() throws Exception {
-        prepareApprovedApply(1L, 4L);
+        prepareApprovedApply(testTaskId, testStudentId);
 
         GuidanceCreateDTO dto = GuidanceCreateDTO.builder()
-                .taskId(1L)
-                .studentId(4L)
+                .taskId(testTaskId)
+                .studentId(testStudentId)
                 .guidanceDate(LocalDateTime.now())
                 .guidanceType("ONSITE")
                 .location("杭州市滨江区某某科技有限公司")
@@ -446,7 +524,7 @@ public class Phase6IntegrationTest {
                 .andExpect(jsonPath("$.data.companyName").value("某某网络科技有限公司"));
 
         // 验证列表查询同样正确补充班级与单位信息
-        mockMvc.perform(get("/api/v1/internship/guidances?taskId=1")
+        mockMvc.perform(get("/api/v1/internship/guidances?taskId=" + testTaskId)
                         .header("Authorization", "Bearer " + teacherToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -457,9 +535,9 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W13: 教师走访越权防御：教师尝试为非负责学生录入指导记录 -> 403")
     void testW13_GuidanceUnauthorizedTeacher() throws Exception {
-        // 学生4由教师3负责，如果教师尝试为学生9999(非本人负责)登记记录
+        // 测试学生由教师3负责，如果教师尝试为学生9999(非本人负责)登记记录
         GuidanceCreateDTO dto = GuidanceCreateDTO.builder()
-                .taskId(1L)
+                .taskId(testTaskId)
                 .studentId(9999L)
                 .guidanceDate(LocalDateTime.now())
                 .guidanceType("PHONE")
@@ -480,9 +558,9 @@ public class Phase6IntegrationTest {
     void testW14_StudentFeedbackConfirmation() throws Exception {
         // 先插入一条未确认的走访记录
         jdbcTemplate.execute("INSERT INTO internship_guidance_record (task_id, teacher_id, teacher_name, student_id, student_name, dept_id, guidance_date, guidance_type, content_summary, feedback_status, is_deleted) " +
-                "VALUES (1, 3, '李教授', 4, '张晓峰', 1, NOW(), 'ONSITE', '现场检查学生出勤与工作环境良好', 'UNCONFIRMED', 0)");
+                "VALUES (" + testTaskId + ", 3, '李教授', " + testStudentId + ", 'P6测试学生', 1, NOW(), 'ONSITE', '现场检查学生出勤与工作环境良好', 'UNCONFIRMED', 0)");
 
-        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE student_id = 4 LIMIT 1", Long.class);
+        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE student_id = " + testStudentId + " LIMIT 1", Long.class);
 
         GuidanceFeedbackDTO feedbackDTO = GuidanceFeedbackDTO.builder()
                 .studentFeedback("感谢李老师来现场走访看望，目前在企业工作顺利")
@@ -501,17 +579,18 @@ public class Phase6IntegrationTest {
     @Test
     @DisplayName("TEST-W15: 反馈越权防御：学生尝试对其他学生的指导记录提交确认 -> 403")
     void testW15_UnauthorizedStudentFeedback() throws Exception {
-        // 插入属于学生999的指导记录
+        // 插入属于其他动态学生的指导记录 (避免固定 student_id = 999 风险)
+        long otherStudentId = testStudentId + 99999L;
         jdbcTemplate.execute("INSERT INTO internship_guidance_record (task_id, teacher_id, teacher_name, student_id, student_name, dept_id, guidance_date, guidance_type, content_summary, feedback_status, is_deleted) " +
-                "VALUES (1, 3, '李教授', 999, '其他学生', 1, NOW(), 'ONLINE', '线上视频答疑交流顺利', 'UNCONFIRMED', 0)");
+                "VALUES (" + testTaskId + ", 3, '李教授', " + otherStudentId + ", '其他学生', 1, NOW(), 'ONLINE', '线上视频答疑交流顺利', 'UNCONFIRMED', 0)");
 
-        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE student_id = 999 LIMIT 1", Long.class);
+        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE task_id = " + testTaskId + " AND student_id = " + otherStudentId + " LIMIT 1", Long.class);
 
         GuidanceFeedbackDTO feedbackDTO = GuidanceFeedbackDTO.builder()
                 .studentFeedback("在岗情况良好")
                 .build();
 
-        // 学生4尝试对学生999的记录提交反馈 -> 403
+        // 测试学生尝试对学生999的记录提交反馈 -> 403
         mockMvc.perform(put("/api/v1/internship/guidances/" + recordId + "/feedback")
                         .header("Authorization", "Bearer " + studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -526,9 +605,9 @@ public class Phase6IntegrationTest {
     void testW16_DuplicateFeedbackLockPrevention() throws Exception {
         // 插入一条已处于 CONFIRMED 状态的走访记录
         jdbcTemplate.execute("INSERT INTO internship_guidance_record (task_id, teacher_id, teacher_name, student_id, student_name, dept_id, guidance_date, guidance_type, content_summary, student_feedback, feedback_time, feedback_status, is_deleted) " +
-                "VALUES (1, 3, '李教授', 4, '张晓峰', 1, NOW(), 'PHONE', '电话了解日常情况', '已有反馈内容', NOW(), 'CONFIRMED', 0)");
+                "VALUES (" + testTaskId + ", 3, '李教授', " + testStudentId + ", 'P6测试学生', 1, NOW(), 'PHONE', '电话了解日常情况', '已有反馈内容', NOW(), 'CONFIRMED', 0)");
 
-        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE student_id = 4 LIMIT 1", Long.class);
+        Long recordId = jdbcTemplate.queryForObject("SELECT id FROM internship_guidance_record WHERE student_id = " + testStudentId + " LIMIT 1", Long.class);
 
         GuidanceFeedbackDTO feedbackDTO = GuidanceFeedbackDTO.builder()
                 .studentFeedback("再次尝试重复提交在岗反馈内容")
@@ -561,13 +640,13 @@ public class Phase6IntegrationTest {
                 .andExpect(jsonPath("$.message").value(containsString("导出时间跨度超过系统最大允许限制")));
 
         // 3. 教师合规请求导出 -> 200，并返回 Excel 文件流
-        mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=1")
+        mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=" + testTaskId)
                         .header("Authorization", "Bearer " + teacherToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", containsString("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")));
 
         // 4. 429 防刷限流拦截：同一教师在10秒内再次发起导出 -> 429 Too Many Requests
-        mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=1")
+        mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=" + testTaskId)
                         .header("Authorization", "Bearer " + teacherToken))
                 .andExpect(status().is(429))
                 .andExpect(jsonPath("$.code").value(429))
@@ -578,19 +657,19 @@ public class Phase6IntegrationTest {
         sql.append("INSERT INTO internship_guidance_record (task_id, teacher_id, teacher_name, student_id, student_name, dept_id, guidance_date, guidance_type, content_summary, feedback_status, is_deleted) VALUES ");
         for (int i = 1; i <= 5001; i++) {
             if (i > 1) sql.append(",");
-            sql.append("(1, 3, '李教授', 4, '张晓峰', 1, '2026-03-15 10:00:00', 'PHONE', '批量测试记录").append(i).append("', 'UNCONFIRMED', 0)");
+            sql.append("(").append(testTaskId).append(", 3, '李教授', ").append(testStudentId).append(", 'P6测试学生', 1, '2026-03-15 10:00:00', 'PHONE', '批量测试记录").append(i).append("', 'UNCONFIRMED', 0)");
         }
         jdbcTemplate.execute(sql.toString());
 
         try {
             // 使用不受前序 teacher 429 限流影响的 adminToken 发起全量导出
-            mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=1")
+            mockMvc.perform(get("/api/v1/internship/guidances?export=excel&taskId=" + testTaskId)
                             .header("Authorization", "Bearer " + adminToken))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value(400))
                     .andExpect(jsonPath("$.message").value(containsString("超出单次导出上限（5000条）")));
         } finally {
-            jdbcTemplate.execute("DELETE FROM internship_guidance_record WHERE content_summary LIKE '批量测试记录%'");
+            jdbcTemplate.execute("DELETE FROM internship_guidance_record WHERE task_id = " + testTaskId + " AND content_summary LIKE '批量测试记录%'");
         }
     }
 
@@ -598,55 +677,97 @@ public class Phase6IntegrationTest {
     @DisplayName("TEST-W18: 监控大盘数据权限隔离与频次校验：学生越权403、跨院系越权403、频次缺失/非法400、教师本人数据范围精确隔离")
     void testW18_MonitorPermissionsAndDataIsolation() throws Exception {
         // 1. 学生越权访问监控大盘 -> 403 Forbidden
-        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1")
+        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId)
                         .header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403))
                 .andExpect(jsonPath("$.message").value(containsString("学生角色无权查看周报监控数据")));
 
         // 2. 指导教师跨院系查询监控数据 -> 403 Forbidden
-        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1&deptId=999")
+        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId + "&deptId=999")
                         .header("Authorization", "Bearer " + teacherToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403))
                 .andExpect(jsonPath("$.message").value(containsString("指导教师无权跨院系查看监控数据")));
 
         // 3. 院系管理员2 (属于院系1) 尝试请求院系999的监控大盘 -> 403 Forbidden
-        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1&deptId=999")
+        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId + "&deptId=999")
                         .header("Authorization", "Bearer " + deptAdminToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403))
                 .andExpect(jsonPath("$.message").value(containsString("院系负责人无权跨院系查看监控大盘")));
 
         // 4. weeklyFrequency 频次缺失校验：任务无 weeklyFrequency 时请求监控大盘 -> 400 Bad Request
-        jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = NULL WHERE id = 1");
+        jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = NULL WHERE id = " + testTaskId);
         try {
-            mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1")
+            mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId)
                             .header("Authorization", "Bearer " + deptAdminToken))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value(400))
                     .andExpect(jsonPath("$.message").value(containsString("实习任务周报频次 (weeklyFrequency) 未配置")));
         } finally {
-            jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'WEEKLY' WHERE id = 1");
+            jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'WEEKLY' WHERE id = " + testTaskId);
         }
 
         // 5. weeklyFrequency 频次非法校验：频次为 MONTHLY 等非法值 -> 400 Bad Request
-        jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'MONTHLY' WHERE id = 1");
+        jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'MONTHLY' WHERE id = " + testTaskId);
         try {
-            mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1")
+            mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId)
                             .header("Authorization", "Bearer " + deptAdminToken))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value(400))
                     .andExpect(jsonPath("$.message").value(containsString("实习任务周报频次配置非法")));
         } finally {
-            jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'WEEKLY' WHERE id = 1");
+            jdbcTemplate.execute("UPDATE internship_task SET weekly_frequency = 'WEEKLY' WHERE id = " + testTaskId);
         }
 
-        // 6. 指导教师正常访问：仅汇算本人负责的学生周报数据 (teacher 3 在 task 1 仅分配了 student 4, 1人)
-        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=1")
+        // 6. 指导教师正常访问：仅汇算本人负责的学生周报数据 (teacher 3 在 testTaskId 仅分配了 testStudentId, 1人)
+        mockMvc.perform(get("/api/v1/internship/weekly-reports/monitor?taskId=" + testTaskId)
                         .header("Authorization", "Bearer " + teacherToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.totalStudents").value(1));
+    }
+
+    @AfterAll
+    void cleanSuite() {
+        // 严格落实要求5：测试结束后按依赖反序完整清理专用测试数据
+        if (testTaskId != null && testStudentId != null) {
+            jdbcTemplate.execute("DELETE FROM internship_weekly_report_history WHERE report_id IN (SELECT id FROM internship_weekly_report WHERE task_id = " + testTaskId + " OR student_id = " + testStudentId + ")");
+            jdbcTemplate.execute("DELETE FROM internship_weekly_report WHERE task_id = " + testTaskId + " OR student_id = " + testStudentId);
+            jdbcTemplate.execute("DELETE FROM internship_guidance_record WHERE task_id = " + testTaskId + " OR student_id = " + testStudentId);
+            jdbcTemplate.execute("DELETE FROM internship_apply WHERE task_id = " + testTaskId + " OR student_id = " + testStudentId);
+            jdbcTemplate.execute("DELETE FROM internship_task_student WHERE task_id = " + testTaskId + " OR student_id = " + testStudentId);
+            jdbcTemplate.execute("DELETE FROM internship_task_class WHERE task_id = " + testTaskId);
+            jdbcTemplate.execute("DELETE FROM internship_task_major WHERE task_id = " + testTaskId);
+            jdbcTemplate.execute("DELETE FROM internship_task WHERE id = " + testTaskId);
+            jdbcTemplate.execute("DELETE FROM sys_user_role WHERE user_id = " + testStudentId);
+            jdbcTemplate.execute("DELETE FROM sys_user WHERE id = " + testStudentId);
+        }
+
+        // 严格落实要求7：断言测试前后数据快照一致性（比对主键、关键字段与记录数量）
+        Integer currentTaskCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_task", Integer.class);
+        Integer currentUserCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_user", Integer.class);
+        Integer currentReportCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_weekly_report", Integer.class);
+        Integer currentGuidanceCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM internship_guidance_record", Integer.class);
+
+        assertEquals(baselineTaskCount, currentTaskCount, "任务总数测试前后必须完全一致");
+        assertEquals(baselineUserCount, currentUserCount, "用户总数测试前后必须完全一致");
+        assertEquals(baselineReportCount, currentReportCount, "周报总数测试前后必须完全一致");
+        assertEquals(baselineGuidanceCount, currentGuidanceCount, "指导台账总数测试前后必须完全一致");
+
+        List<Map<String, Object>> currentTasks = jdbcTemplate.queryForList("SELECT id, task_code, task_name, status FROM internship_task ORDER BY id");
+        List<Map<String, Object>> currentTaskStudents = jdbcTemplate.queryForList("SELECT task_id, student_id FROM internship_task_student ORDER BY task_id, student_id");
+        List<Map<String, Object>> currentUsers = jdbcTemplate.queryForList("SELECT id, username FROM sys_user ORDER BY id");
+        List<Map<String, Object>> currentReports = jdbcTemplate.queryForList("SELECT id, task_id, student_id, week_number, status FROM internship_weekly_report ORDER BY id");
+        List<Map<String, Object>> currentGuidances = jdbcTemplate.queryForList("SELECT id, task_id, student_id, guidance_type FROM internship_guidance_record ORDER BY id");
+        List<Map<String, Object>> currentApplies = jdbcTemplate.queryForList("SELECT id, task_id, student_id, apply_status FROM internship_apply ORDER BY id");
+
+        assertEquals(baselineTasks, currentTasks, "任务表主键与关键字段测试前后必须完全一致");
+        assertEquals(baselineTaskStudents, currentTaskStudents, "任务学生关联主键与关联测试前后必须完全一致");
+        assertEquals(baselineUsers, currentUsers, "用户表主键与关键字段测试前后必须完全一致");
+        assertEquals(baselineReports, currentReports, "周报表主键与关键字段测试前后必须完全一致");
+        assertEquals(baselineGuidances, currentGuidances, "指导台账表主键与关键字段测试前后必须完全一致");
+        assertEquals(baselineApplies, currentApplies, "实习申请表主键与关键字段测试前后必须完全一致");
     }
 }

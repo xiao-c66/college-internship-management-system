@@ -8,9 +8,9 @@ spring:
     name: college-internship-backend-test
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:internship_db}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:internship_db_test}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD}
     hikari:
       minimum-idle: 1
       maximum-pool-size: 5
@@ -56,4 +56,31 @@ internship:
     guidance-voucher-max-size-mb: 10
     min-task-duration-days: 0
     system-timezone: "Asia/Shanghai"
+
+# 阶段8 系统运维、单机缓存与调度默认参数配置 (测试环境)
+system:
+  app:
+    name: 高校实习全过程管理系统-测试环境
+    version: 1.0.0-SNAPSHOT
+    stage: PHASE_7_ACCEPTED
+  security:
+    trusted-proxies: "127.0.0.1,::1,0:0:0:0:0:0:0:1,localhost"
+  cache:
+    caffeine:
+      max-size: 1000
+      expire-after-write-minutes: 30
+      record-stats: true
+  job:
+    execution-timeout-seconds: 60
+    max-retries: 2
+    timezone: "Asia/Shanghai"
+  backup:
+    retention-days: 30
+    rate-limit-seconds: 30
+    storage-dir: "./target/test-backup"
+  slow-sql:
+    threshold-ms: 500
+    ring-buffer-size: 1000
+    retention-hours: 24
+    max-stored-records: 500
 

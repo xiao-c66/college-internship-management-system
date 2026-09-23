@@ -101,6 +101,19 @@
             <version>1.3.39</version>
         </dependency>
 
+        <!-- Caffeine Cache (Phase 8 bounded in-memory cache) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Jsoup (Phase 8 Notice HTML XSS Sanitization) -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

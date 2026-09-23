@@ -16,12 +16,32 @@ spring:
     time-zone: Asia/Shanghai
     default-property-inclusion: non_null
 
-# 系统基础全局配置 (阶段3骨架默认值，由sys_config动态覆盖)
+# 系统基础全局配置 (阶段8 强类型系统运维参数默认值)
 system:
   app:
     name: 高校实习全过程管理系统
     version: 1.0.0-SNAPSHOT
     stage: PHASE_7_ACCEPTED
+  security:
+    trusted-proxies: "127.0.0.1,::1,0:0:0:0:0:0:0:1,localhost" # 可信反向代理列表，非可信来源严禁使用代理IP标头
+  cache:
+    caffeine:
+      max-size: 1000                          # 有界单机缓存最大对象容量
+      expire-after-write-minutes: 30          # 写入后存活过期时效 (分钟)
+      record-stats: true                      # 启用统计指标以支持 API-117
+  job:
+    execution-timeout-seconds: 60             # 调度任务单次执行超时硬限制 (秒)
+    max-retries: 2                            # 数据库瞬时抖动最大重试次数
+    timezone: "Asia/Shanghai"                 # 统一东八区业务时区
+  backup:
+    retention-days: 30                        # 备份保留天数基准
+    rate-limit-seconds: 30                    # 备份触发防抖冷却秒数
+    storage-dir: "./backup"                   # 备份受控存储根目录
+  slow-sql:
+    threshold-ms: 500                         # 慢接口告警基准阈值 (毫秒)
+    ring-buffer-size: 1000                    # 内存滑动采样窗口最大容量
+    retention-hours: 24                       # 内存慢日志最长保留小时数
+    max-stored-records: 500                   # 内存最多存储慢日志条数
 
 # 阶段6 实习周报与过程指导参数配置 (部署可调整配置·待业务方确认)
 internship:

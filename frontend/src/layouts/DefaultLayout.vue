@@ -13,6 +13,9 @@
       </div>
 
       <div class="header-right">
+        <!-- 顶栏通知铃铛与抽屉组件 -->
+        <NoticeDrawer />
+
         <el-tag :type="roleTagType" effect="plain" class="role-badge">
           {{ roleDisplayName }}
         </el-tag>
@@ -198,6 +201,25 @@
           </el-menu-item>
 
           <div class="menu-divider"></div>
+          <div class="menu-group-title">阶段8 教学通知与管理</div>
+
+          <el-menu-item
+            v-if="hasRole('DEPT_ADMIN') || isAdmin"
+            index="/admin/system/notice"
+          >
+            <el-icon><Notification /></el-icon>
+            <template #title>教学通知公告 (API-112~115)</template>
+          </el-menu-item>
+
+          <el-menu-item
+            v-if="isAdmin"
+            index="/admin/system/monitor"
+          >
+            <el-icon><Odometer /></el-icon>
+            <template #title>系统监控与审计 (API-116~122)</template>
+          </el-menu-item>
+
+          <div class="menu-divider"></div>
           <div class="menu-group-title">系统工具与安全</div>
 
           <el-menu-item index="/dev-diag">
@@ -238,10 +260,13 @@ import {
   Warning,
   Bell,
   Medal,
-  FolderChecked
+  FolderChecked,
+  Notification,
+  Odometer
 } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@/store/modules/user';
+import NoticeDrawer from '@/components/NoticeDrawer.vue';
 
 const route = useRoute();
 const router = useRouter();

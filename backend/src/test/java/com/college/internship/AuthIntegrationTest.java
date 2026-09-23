@@ -5,15 +5,27 @@ import com.college.internship.vo.CaptchaVO;
 import com.college.internship.service.IAuthService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+
+import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class AuthIntegrationTest {
 
     @Autowired
@@ -40,6 +53,30 @@ public class AuthIntegrationTest {
 
     @Autowired
     private IAuthService authService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private List<Map<String, Object>> baselineUserTokens;
+
+    @BeforeAll
+    void initSuite() {
+        // 测试启动防呆校验：必须连接独立测试数据库 internship_db_test
+        String currentDb = jdbcTemplate.queryForObject("SELECT DATABASE()", String.class);
+        if (!"internship_db_test".equalsIgnoreCase(currentDb)) {
+            throw new IllegalStateException("【严重安全阻断】当前测试数据库为: [" + currentDb + "]，非 'internship_db_test'！已强制终止测试！");
+        }
+
+        // 快照：记录所有账号在测试前的初始 token_version
+        baselineUserTokens = jdbcTemplate.queryForList("SELECT id, username, token_version FROM sys_user ORDER BY id");
+    }
+
+    @AfterAll
+    void cleanSuite() {
+        // 严格落实要求4：断言全表账号 token_version 测试前后快照完全一致
+        List<Map<String, Object>> currentUserTokens = jdbcTemplate.queryForList("SELECT id, username, token_version FROM sys_user ORDER BY id");
+        assertEquals(baselineUserTokens, currentUserTokens, "所有正式账号的 token_version 测试前后必须完全一致，零残留、零副作用");
+    }
 
     @Test
     @DisplayName("1. 验证码生成接口验证")
@@ -145,44 +182,86 @@ public class AuthIntegrationTest {
     }
 
     @Test
-    @DisplayName("7. 全端退出使旧Token即时失效核心闭环验证 (token_version)")
+    @DisplayName("7. 全端退出使旧Token即时失效核心闭环验证 (基于独立动态测试学生账号)")
     void testLogoutInvalidatesToken() throws Exception {
-        // 1. 学生账号登录
-        CaptchaVO captcha = authService.generateCaptcha();
-        LoginDTO loginDTO = new LoginDTO();
-        loginDTO.setUsername("student");
-        loginDTO.setPassword("123456");
-        loginDTO.setCaptchaKey(captcha.getCaptchaKey());
-        loginDTO.setCaptcha(captcha.getCaptchaCode());
+        // 1. 动态生成专用测试学生账号 (隔离正式账号 student，实现零读取、零写入、零副作用)
+        String dynamicSuffix = System.currentTimeMillis() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String testUsername = "test_auth_stu_" + dynamicSuffix;
+        Long testUserId = null;
 
-        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(loginDTO)))
-                .andExpect(status().isOk())
-                .andReturn();
+        try {
+            // BCrypt 散列密码 123456
+            String hashPassword = "$2a$10$yPGsnNqEVplIMFJzfBoDzO1q9bbT7fcHOAunO48kCu7kJwfRbRDf6";
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbcTemplate.update(connection -> {
+                PreparedStatement ps = connection.prepareStatement(
+                        "INSERT INTO sys_user (username, password, real_name, user_type, user_number, phone, email, dept_id, major_id, class_id, status, token_version, is_deleted) " +
+                                "VALUES (?, ?, '动态认证测试学生', 'STUDENT', ?, '13900009999', 'dynamic_stu@college.edu.cn', 1, 1, 1, 1, 0, 0)",
+                        Statement.RETURN_GENERATED_KEYS
+                );
+                ps.setString(1, testUsername);
+                ps.setString(2, hashPassword);
+                ps.setString(3, "STU_" + dynamicSuffix);
+                return ps;
+            }, keyHolder);
+            testUserId = keyHolder.getKey().longValue();
 
-        JsonNode root = objectMapper.readTree(loginResult.getResponse().getContentAsString());
-        String token = root.path("data").path("token").asText();
+            // 动态查询 STUDENT 角色ID 并绑定
+            Long studentRoleId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM sys_role WHERE role_code = 'ROLE_STUDENT' OR role_code = 'STUDENT' LIMIT 1",
+                    Long.class
+            );
+            jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?, ?)", testUserId, studentRoleId);
 
-        // 2. 携带有效 Token 访问工作台数据 -> 正常 200
-        mockMvc.perform(get("/api/v1/dashboard/summary")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.userType").value("STUDENT"))
-                .andExpect(jsonPath("$.data.metrics.internshipStatus").isNotEmpty());
+            // 2. 专用测试学生账号登录
+            CaptchaVO captcha = authService.generateCaptcha();
+            LoginDTO loginDTO = new LoginDTO();
+            loginDTO.setUsername(testUsername);
+            loginDTO.setPassword("123456");
+            loginDTO.setCaptchaKey(captcha.getCaptchaKey());
+            loginDTO.setCaptcha(captcha.getCaptchaCode());
 
-        // 3. 执行退出登录接口 -> 成功
-        mockMvc.perform(post("/api/v1/auth/logout")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
+            MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(loginDTO)))
+                    .andExpect(status().isOk())
+                    .andReturn();
 
-        // 4. 再次携带旧 Token 请求受保护资源 -> 必须被 401 拦截拒绝 (因为 token_version 已原子递增)
-        mockMvc.perform(get("/api/v1/dashboard/summary")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(401));
+            JsonNode root = objectMapper.readTree(loginResult.getResponse().getContentAsString());
+            String token = root.path("data").path("token").asText();
+
+            // 3. 携带有效 Token 访问工作台数据 -> 正常 200
+            mockMvc.perform(get("/api/v1/dashboard/summary")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(200))
+                    .andExpect(jsonPath("$.data.userType").value("STUDENT"))
+                    .andExpect(jsonPath("$.data.metrics.internshipStatus").isNotEmpty());
+
+            // 4. 执行退出登录接口 -> 成功 (应用层自增该动态测试账号的 token_version 并记录 sys_operation_log)
+            mockMvc.perform(post("/api/v1/auth/logout")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(200));
+
+            // 验证应用层确实使数据库中该动态测试账号的 token_version 原子自增 +1 (0 -> 1)
+            Integer incrementedVersion = jdbcTemplate.queryForObject(
+                    "SELECT token_version FROM sys_user WHERE id = ?", Integer.class, testUserId
+            );
+            assertEquals(1, incrementedVersion, "注销成功后动态测试账号 token_version 必须自增 +1");
+
+            // 5. 再次携带旧 Token 请求受保护资源 -> 必须被 401 拦截拒绝 (因为 token_version 已原子递增)
+            mockMvc.perform(get("/api/v1/dashboard/summary")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(401));
+        } finally {
+            // 6. 物理清理专用动态测试账号与角色关系 (零触碰正式账号 student，保留 sys_operation_log 审计日志)
+            if (testUserId != null) {
+                jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id = ?", testUserId);
+                jdbcTemplate.update("DELETE FROM sys_user WHERE id = ?", testUserId);
+            }
+        }
     }
 
     @Test
