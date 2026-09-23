@@ -1,0 +1,95 @@
+# ==============================================================================
+# 高校实习全过程管理系统 - 阶段8 本地隔离 Docker 部署演练编排文件
+# 规约边界：
+# 1. 严禁连接或导入正式库 internship_db，仅初始化 internship_db_test 测试数据；
+# 2. 数据库独立暴露端口 3308，独立数据卷 internship_docker_data，独立网络 internship_net；
+# 3. 停止演练仅执行 docker compose stop，严禁自动执行 docker compose down -v；
+# 4. 本演练环境标示为 LOCAL DRILL ONLY，不宣称为正式生产交付。
+# ==============================================================================
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: internship-mysql-drill
+    restart: unless-stopped
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --lower_case_table_names=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: internship_db_test
+      MYSQL_USER: ${DB_USER:-internship_test}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-123456}
+      TZ: Asia/Shanghai
+    ports:
+      - "${DOCKER_DB_PORT:-3308}:3306"
+    volumes:
+      - internship_docker_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internship_net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: internship-backend-drill
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: internship_db_test
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-123456}
+      SERVER_PORT: 8080
+      TZ: Asia/Shanghai
+    ports:
+      - "${DOCKER_BACKEND_PORT:-8088}:8080"
+    networks:
+      - internship_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: internship-frontend-drill
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${DOCKER_FRONTEND_PORT:-8888}:80"
+    networks:
+      - internship_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  internship_docker_data:
+    name: internship_docker_data
+
+networks:
+  internship_net:
+    name: internship_net
+    driver: bridge

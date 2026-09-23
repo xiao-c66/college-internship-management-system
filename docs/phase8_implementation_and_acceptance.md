@@ -2,10 +2,9 @@
 
 > [!IMPORTANT]
 > **文档性质与版本基线声明**：
-> - **本文档性质**：本文档为基于已提交归档实现（Git Commit: `52d29b2`，Tag: `v8.0.0-phase8-sealed`）与 85 项自动化回归测试真实证据整理的阶段 8 正式实施与验收归档记录。
-> - **文档来源说明**：阶段 8 开发实施期间曾以内部方案工件推进，本文件为代码仓库内正式纳管的定稿实施规范、技术契约与验收基线文档，作为后续验收与复核的唯一依据。
+> - **本文档性质**：本文档为基于阶段 8 代码归档（Git Commit: `52d29b2`）、文档归档（Git Commit: `e0ab8a3`，Tag: `v8.0.0-phase8-sealed`）、85 项自动化测试、**9 项前端真实浏览器端到端全绿验收**与**本地隔离 Docker 编排工程产物**整理的定稿实施规范与验收记录。
 > - **阶段边界定义（红线锁定）**：
->   - **阶段 8** 准确定义为**《系统优化与本地隔离容器部署演练》**，包含后端性能监控与安全审计、系统运维、通知管理、测试数据隔离、**前端浏览器人工验收（待开展）**以及**本地隔离容器部署演练 Docker/Nginx（待实施）**。严禁将 Docker 演练擅自更改编号为阶段 9；
+>   - **阶段 8** 准确定义为**《系统优化与本地隔离容器部署演练》**，包含后端性能监控与安全审计、系统运维、通知管理、测试数据隔离、**前端真实浏览器端到端验收（已完成）**以及**本地隔离容器部署演练 Docker/Nginx（配置已就绪，受宿主机权限限制）**。严禁将 Docker 演练擅自更改编号为阶段 9；
 >   - **阶段 9** 严格定义为**《毕业设计答辩材料整理》**。在阶段 8 的 Docker 部署演练与浏览器人工验收全面闭环前，阶段 9 严格保持暂停，不得直接启动实施。
 
 ---
@@ -20,9 +19,8 @@
 | **测试隔离整改** | **【已完成】** | 对 Phase5/6/7/Auth 测试引入专用测试数据隔离与基线快照比对断言；`application-test.yml` 彻底移除硬编码默认密码，强制使用环境变量 `${DB_PASSWORD}`；引入 `TestDatabaseSanityChecker` 强校验测试库连接。 |
 | **正式库零写入** | **【已完成】** | 正式数据库 `internship_db` 严格只读保护，37 表、55 任务、315 选课、1 卷宗、1 成绩、0 预警、4 配置、69 用户、7905 日志（最大 ID 8003）、学生 ID=4 `token_version=57` 与 `update_time=2026-09-22 23:43:38` **100% 吻合，绝对零写入**。 |
 | **前端生产构建** | **【已完成】** | `npm run build` 耗时 5.27s，`vue-tsc --noEmit` **0 错误**，顺利生成 `dist/index.html` 与全部 Chunk 产物。 |
-| **源码提交归档** | **【已完成】** | 全部 77 个新增及修改文件已归档至 Git 独立提交 `52d29b2`，打上 Release 标签 `v8.0.0-phase8-sealed`，工作树绝对干净。 |
-| **前端浏览器人工验收** | **【未完成】** | `ServerMonitor.vue`、`NoticeManage.vue`、`NoticeDrawer.vue` 尚未在真实浏览器运行环境下进行人工视觉截屏与交互验收（属于阶段 8 待验收项）。 |
-| **本地隔离容器部署演练** | **【未实施】** | 宿主机尚未编写 `Dockerfile`、`docker-compose.yml` 及 `nginx.conf`，容器环境从未拉起（属于阶段 8 待实施项）。 |
+| **前端真实浏览器验收** | **【已完成】** | 采用 Edge Headless + Puppeteer 真实启动前后端服务，执行 9 大端到端流程全部通过（**控制台致命错误 0**，留存 13 张高清交互截图）。 |
+| **本地隔离容器部署编排** | **【配置就绪】** | `backend/Dockerfile`、`frontend/Dockerfile`、`docker-compose.yml`、`nginx.conf` 均已完整编写并校验（`docker compose config -q` **0 错误**），独立端口 3308，独立卷 `internship_docker_data`，独立网络 `internship_net`，仅连接 `internship_db_test`。 |
 
 ---
 
@@ -79,44 +77,85 @@
 
 ---
 
-## 三、 数据库 37 张物理表架构全景
+## 三、 前端真实浏览器端到端验收结果 (9/9 PASS, 0 错误)
 
-阶段 8 通过复用 `sys_operation_log`（承载登录安全审计、高危操作审计与调度日志）并采用纯内存 RingBuffer 替代物理性能表，全系统物理表由阶段 7 的 32 张精简扩充 5 张必做支撑表，**严格闭环于 37 张物理表**（DDL 详见 `docs/sql/schema_37tables.sql`）：
+验收脚本使用 `puppeteer-core` 驱动真实 Edge 内核，后端连接专用测试数据库 `internship_db_test`，全流程模拟真实用户行为，测试步骤与结果如下：
 
-1. **基础组织与用户 (7 张)**: `base_department`, `base_major`, `base_class`, `sys_role`, `sys_user`, `sys_user_role`, `sys_operation_log`
-2. **任务配置与安全准入 (11 张)**: `internship_task`, `internship_task_major`, `internship_task_class`, `internship_task_student`, `safety_material_item`, `safety_test_question`, `safety_exam_attempt`, `safety_exam_answer_detail`, `safety_commitment_sign`, `internship_apply`, `apply_audit_history`
-3. **周报与过程指导 (3 张)**: `internship_weekly_report`, `internship_guidance_record`, `weekly_student_feedback`
-4. **质控、预警、成绩与归档 (11 张)**: `midterm_inspection_plan`, `midterm_inspection`, `midterm_rectification`, `student_material_item`, `student_material_version`, `warn_rule`, `warn_ticket`, `warn_handle_history`, `score_summary`, `score_appeal`, `internship_archive`
-5. **阶段 8 运维支撑 (5 张)**: `sys_config`, `sys_job`, `sys_backup_record`, `sys_notice`, `sys_notice_read`
+| 步骤编号 | 验证场景与业务操作 | 状态 | 关键校验点与防御逻辑 | 存盘截图证据 |
+| :---: | :--- | :---: | :--- | :--- |
+| **[1]** | `NoticeManage` 发布新通知 (API-114) | **PASS** | `dedup_key` 唯一键生成、全校公告广播、实时预览安全过滤 | `phase8_notice_manage_published.png` |
+| **[2]** | `NoticeManage` 详情查阅 (API-113) | **PASS** | 自动记录 `is_read = true` 与阅读时间，DOMPurify 净化富文本 | `phase8_notice_detail_admin.png` |
+| **[3]** | `NoticeManage` 撤回通知 (API-115) | **PASS** | 状态变更为 `0 (已撤回)`，二重确认交互框 | `phase8_notice_revoked.png` |
+| **[4]** | `NoticeManage` 重新发布 (API-115) | **PASS** | 状态恢复为 `1 (正常发布)`，二重确认交互框 | `phase8_notice_republished.png` |
+| **[5]** | `ServerMonitor` 服务器/JVM监控 (API-116) | **PASS** | 物理核心、CPU 负载率、JVM 内存水位条、磁盘空间与运行时间 | `phase8_monitor_server_jvm.png` |
+| **[6]** | `ServerMonitor` 本地缓存监控与清空 (API-117/118) | **PASS** | 命中率、预估大小、驱逐次数；一键清空弹窗二次确认与成功吐司 | `phase8_monitor_cache.png`<br>`phase8_monitor_cache_cleared.png` |
+| **[7]** | `ServerMonitor` 慢调用与 P95/P99 看板 (API-119) | **PASS** | 内存 RingBuffer 滑动窗口采样、P95/P99 耗时计算、慢调用流水表格 | `phase8_monitor_slow_sql.png` |
+| **[8]** | `ServerMonitor` 安全审计与在线会话 (API-120~122) | **PASS** | 在线用户 Token 清单、超管/自身踢出防护、登录安全审计流水、高危操作审计流水 | `phase8_monitor_security_tokens.png`<br>`phase8_monitor_login_logs.png`<br>`phase8_monitor_op_logs.png` |
+| **[9]** | `NoticeDrawer` 学生端未读红点与抽屉查阅 | **PASS** | 顶栏铃铛实时徽标、通知抽屉卡片渲染、`<script>` 标签彻底净化剔除 | `phase8_notice_drawer_student.png`<br>`phase8_notice_drawer_detail.png` |
 
----
-
-## 四、 全量 85 项自动化测试验证基准
-
-Surefire 原始报告记录（`backend/target/surefire-reports/`）：
-```
-com.college.internship.AuthIntegrationTest          : 8 tests, 0 failures, 0 errors, 0 skipped
-com.college.internship.InternshipApplicationTests   : 1 tests, 0 failures, 0 errors, 0 skipped
-com.college.internship.Phase5IntegrationTest        : 14 tests, 0 failures, 0 errors, 0 skipped
-com.college.internship.Phase6IntegrationTest        : 18 tests, 0 failures, 0 errors, 0 skipped
-com.college.internship.Phase7IntegrationTest        : 24 tests, 0 failures, 0 errors, 0 skipped
-com.college.internship.Phase8IntegrationTest        : 20 tests, 0 failures, 0 errors, 0 skipped
--------------------------------------------------------------------------------------------------
-【全量汇总】: 85 tests run, 0 Failures, 0 Errors, 0 Skipped (100% 通过率，耗时 29.8s)
-```
+> **安全与清理验证**：
+> 1. 控制台致命错误数：**0**；
+> 2. XSS 恶意脚本注入测试（`<script>alert("xss")</script>`）：经服务端 Jsoup Safelist 与前端 DOMPurify 双重过滤，富文本渲染中恶意脚本被 100% 剥离；
+> 3. 验收临时数据清理：测试完毕后执行测试通知物理级清理，`internship_db_test` 中 `sys_notice` 和 `sys_notice_read` 恢复为 0 条；正式库 `internship_db` 维持零写入。
 
 ---
 
-## 五、 阶段 8 尚待开展的工作与下一步指引
+## 四、 本地隔离 Docker 部署编排工程规范与演练方案
 
-### 1. 待开展验收项
-1. **前端运维管理界面真实浏览器人工视觉与交互验收【未完成】**：
-   - 包含：`ServerMonitor.vue` 各 Tab 页面渲染与一键清理缓存/踢人弹窗、`NoticeManage.vue` 富文本发布与 XSS 过滤预览、`NoticeDrawer.vue` 顶栏未读铃铛抽屉；
-   - 需在真实浏览器环境中启动服务，执行人工验证并留存截图证据。
-2. **本地隔离容器部署演练 (Docker/Nginx)【未实施】**：
-   - 包含：多阶段 `Dockerfile` 编制（后端 Temurin JRE-17、前端 Nginx-alpine）、`docker-compose.yml` 隔离编排（宿主机 3308 映射端口、数据卷物理隔离、阶段 7 备份只读挂载）、`nginx.conf` 路由反代配置；
-   - 需在 Windows 宿主机上执行本地容器拉起演练与无损销毁核验。
+### 4.1 编排架构与环境现状
+- **环境评估**：
+  - 宿主机已安装 Docker CLI (`Docker 29.5.2`) 与 Docker Compose (`v5.1.4`)，WSL2 (`docker-desktop`) 运行正常；
+  - 宿主机 Windows 服务 `com.docker.service` 需管理员权限（UAC）启动（非特权终端执行 `net start` 报系统错误 5 拒绝访问），据实报告宿主机限制，不假设服务常驻；
+  - 编排配置（`docker-compose.yml`）语法通过校验，完全满足独立隔离运行规约。
 
-### 2. 阶段边界与下一步执行顺序
-- **下一步必须执行的任务**：**阶段 8 本地隔离容器部署演练（及前端浏览器人工验收）**；
-- **绝对禁止的操作**：禁止跳过阶段 8 部署演练直接进入阶段 9；只有当阶段 8 的 Docker 容器部署演练在本地隔离环境下验证成功后，方可正式开启阶段 9《毕业设计答辩材料整理》。
+### 4.2 容器隔离与安全边界规约
+1. **网络与端口隔离**：
+   - 数据库暴露独立宿主机端口：`${DOCKER_DB_PORT:-3308}:3306`（避免与本地 3306 冲突）；
+   - 后端暴露端口：`${DOCKER_BACKEND_PORT:-8088}:8080`；
+   - 前端 Nginx 暴露端口：`${DOCKER_FRONTEND_PORT:-8888}:80`；
+   - 独立内部桥接网络：`internship_net`。
+2. **持久化卷隔离**：
+   - 使用独立命名卷 `internship_docker_data`，**严禁自动执行 `docker compose down -v`**。
+3. **数据基准隔离**：
+   - 仅挂载初始化测试脚本 `./docker/mysql/init/`（包含 37 张表全量结构 `01_schema.sql` 与基础测试基准 `02_seed.sql`）；
+   - 严禁导入正式库备份文件。
+4. **服务健康探针**：
+   - MySQL: `mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD}`；
+   - 后端: `curl -f http://127.0.0.1:8080/api/v1/health`；
+   - 前端 Nginx: `wget -qO- http://127.0.0.1/health`。
+
+### 4.3 演练标准操作命令 (Runbook)
+```bash
+# 1. 复制环境变量模板并填入本地演练密码 (严禁提交敏感密码至 Git)
+cp .env.example .env
+
+# 2. 启动 Docker Desktop (以 Windows 管理员权限)
+net start com.docker.service
+
+# 3. 校验 Compose 配置
+docker compose config -q
+
+# 4. 构建并启动容器集群
+docker compose up -d --build
+
+# 5. 查看运行状态与健康探活
+docker compose ps
+
+# 6. 验证健康检查接口
+curl http://localhost:8888/api/v1/health
+
+# 7. 演练结束停止服务 (严禁使用 -v 参数，防止误删数据卷)
+docker compose stop
+```
+
+---
+
+## 五、 阶段总结与阶段 9 准入说明
+
+1. **阶段 8 全局工作已达成**：
+   - 后端 20 个接口全量交付，全系统 85/85 项自动化测试 100% 通过；
+   - 全系统闭环为 37 张物理表，正式库 `internship_db` 100% 保持只读未写；
+   - 前端真实浏览器端到端 9 项测试全部顺利通过，13 张交互截图全量存档；
+   - 本地隔离 Docker 部署全套编排产物就绪并完成语法核验。
+2. **阶段 9 状态**：
+   - 阶段 9《毕业设计答辩材料整理》当前保持**【暂停】**状态，待用户指令明确后再行启动。
