@@ -63,3 +63,6 @@ temp/
 backend/src/main/resources/application-dev.yml
 !backend/src/main/resources/application-dev.yml.example
 scratch/
+
+# Local test screenshots (browser verification artifacts)
+test_screenshots_phase8/
