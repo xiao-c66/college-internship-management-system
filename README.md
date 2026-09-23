@@ -49,39 +49,24 @@ college-internship-management-system/
 
 ---
 
-## 阶段4与阶段5 数据表范围 (Database Tables)
+## 系统物理数据表架构 (Database Tables - 37张表全景闭环)
 
-系统严格按照垂直切片原则逐步创建物理表，目前累计就绪 **18 张物理表**（阶段4基础表 7 张 + 阶段5业务表 11 张），其余业务表暂不提前创建：
+系统严格按照增量切片与规范闭环原则推进，当前物理数据表总数**精确闭环为 37 张物理表**（DDL 完整脚本详见 [`docs/sql/schema_37tables.sql`](file:///d:/devlop/IDEA/college-internship-management-system/docs/sql/schema_37tables.sql)），零多余物理表、零冗余性能表：
 
-### 1. 阶段4 基础表 (7张)
-| 序号 | 物理表名 | 业务含义 | 核心约束与安全特性 |
-| :--- | :--- | :--- | :--- |
-| 1 | `base_department` | 二级院系信息表 | `uk_dept_code` 唯一索引，支持逻辑删除 |
-| 2 | `base_major` | 专业基础信息表 | 关联院系外键索引 `idx_major_dept_id` |
-| 3 | `base_class` | 行政班级信息表 | 联合索引 `idx_class_dept_major` |
-| 4 | `sys_role` | 核心系统角色表 | `uk_role_code` 唯一索引（预置4类角色） |
-| 5 | `sys_user` | 系统核心用户表 | `uk_username`, `token_version` 原子自增控制 |
-| 6 | `sys_user_role` | 用户角色关联表 | 联合唯一索引 `uk_user_role` |
-| 7 | `sys_operation_log` | 安全审计日志表 | 记录登录/登出/操作留痕，参数强制脱敏 |
+### 1. 基础组织与系统核心表 (阶段4，共7张)
+`base_department` (院系), `base_major` (专业), `base_class` (班级), `sys_role` (角色), `sys_user` (用户), `sys_user_role` (用户角色), `sys_operation_log` (全盘操作与安全审计日志).
 
-### 2. 阶段5 业务核心表 (11张)
-| 序号 | 物理表名 | 业务含义 | 核心业务规则与特性 |
-| :--- | :--- | :--- | :--- |
-| 8 | `internship_task` | 实习批次任务主表 | 五项权重严格等于100%；发布前必配周报与安全及格分；严禁默认院系 |
-| 9 | `internship_task_major` | 任务关联专业表 | 支持按专业圈定任务范围 |
-| 10 | `internship_task_class` | 任务关联行政班级表 | 发布时基于班级自动圈定导入学生名单 |
-| 11 | `internship_task_student` | 任务圈定学生名单表 | 记录阅读进度/承诺书状态/安全准入状态，含 `teacher_id` 指导教师绑定 |
-| 12 | `safety_material_item` | 安全教育规程资料表 | 支持全校通用或任务专有资料发布 |
-| 13 | `safety_test_question` | 安全考核客观题库表 | 支持单选与判断题，全库脱敏答案输出 |
-| 14 | `safety_exam_attempt` | 学生安全测试作答记录表 | 记录作答得分、及格判定与轮次统计 |
-| 15 | `safety_exam_answer_detail`| 答卷逐题作答明细表 | 记录考生选择、系统对错判定与单题得分 |
-| 16 | `safety_commitment_sign` | 安全责任知晓承诺书签署表 | 记录学生电子签名、签署网络 IP 与时间戳凭据 |
-| 17 | `internship_apply` | 学生校外实习申报主表 | APPLY-009 审核通过强锁定；单位/岗位/时间变动禁普通修改 |
-| 18 | `apply_audit_history` | 实习申报审批流转历史表 | 导师初审与院系终审流转留痕；记录退回意见与快照数据 |
+### 2. 实习任务与安全准入表 (阶段5，共11张)
+`internship_task` (任务批次主表), `internship_task_major` (任务圈定专业), `internship_task_class` (任务圈定班级), `internship_task_student` (圈定学生与导师绑定), `safety_material_item` (规程资料), `safety_test_question` (客观题库), `safety_exam_attempt` (测试作答记录), `safety_exam_answer_detail` (逐题明细), `safety_commitment_sign` (安全责任知晓承诺书), `internship_apply` (实习申报主表·APPLY-009强锁定), `apply_audit_history` (审批流转历史快照).
 
-> [!NOTE]
-> **考试规则正式冻结说明 (SAFE-004)**：
-> 当前系统安全准入考试机制确定并冻结为：**任务专属题库与全校通用题库中的全部启用试题全量抽取并在服务端/客户端随机乱序洗牌**。由于当前数据模型未配置题量和题型比例字段，暂不支持按比例抽题。
+### 3. 周报填报与过程指导表 (阶段6，共3张)
+`internship_weekly_report` (实习周报主表与版本轨迹), `internship_guidance_record` (导师过程指导台账), `weekly_student_feedback` (学生针对性反馈确认与锁定).
+
+### 4. 中期巡检、预警、成绩评定与电子归档表 (阶段7，共11张)
+`midterm_inspection_plan` (检查方案与抽检配置), `midterm_inspection` (中期巡检记录), `midterm_rectification` (巡检整改单), `student_material_item` (阶段性过程材料), `student_material_version` (材料版本轨迹), `warn_rule` (异常预警规则快照), `warn_ticket` (预警工单), `warn_handle_history` (预警协同流转历史), `score_summary` (五维总评成绩汇总), `score_appeal` (成绩申诉与仲裁), `internship_archive` (电子归档卷宗与特批解锁).
+
+### 5. 系统运维、调度、备份与通知表 (阶段8新增，共5张)
+`sys_config` (系统运维参数配置), `sys_job` (受限白名单定时任务), `sys_backup_record` (受控热备份元数据与SHA-256校验), `sys_notice` (全局教学通知公告·dedup_key业务防重), `sys_notice_read` (通知用户阅读状态记录).
 
 ---
 
@@ -154,26 +139,6 @@ npm.cmd run dev -- --port 3000
 
 ---
 
-## 阶段5 业务数据表与核心业务范围 (Phase 5 Tables & Business Scope)
-
-阶段5严格遵循增量交付原则，仅在阶段4的 7 张基础物理表之上增加本阶段必需的 **11 张业务表**（当前系统总计 18 张表，绝不提前创建其余 24 张表）：
-
-| 序号 | 物理表名 | 业务含义 | 核心约束与安全特性 |
-| :--- | :--- | :--- | :--- |
-| 1 | `internship_task` | 实习批次任务主表 | `uk_task_code`，五项评价成绩权重严格等于 100.00% (TASK-009) |
-| 2 | `internship_task_major` | 任务关联专业表 | `uk_task_major`，圈定专业范围 |
-| 3 | `internship_task_class` | 任务关联班级表 | `uk_task_class`，圈定班级范围 |
-| 4 | `internship_task_student` | 任务圈定参与学生名单表 | `uk_task_student`，任务发布时自动同步 |
-| 5 | `safety_material_item` | 安全教育学习资料表 | 支持全校通用 (SAFE-001) 与任务专属 (SAFE-002) 隔离 |
-| 6 | `safety_test_question` | 安全教育题库表 | 支持单选、多选、判断客观题与标准答案脱敏 (SAFE-003/004) |
-| 7 | `safety_exam_attempt` | 学生安全测试交卷记录表 | 记录成绩、是否及格与最大重测次数校验 (SAFE-005) |
-| 8 | `safety_exam_answer_detail` | 安全测试逐题作答明细表 | 逐题自动核对与判分留痕 |
-| 9 | `safety_commitment_sign` | 安全承诺书签署与保单凭据表 | `uk_task_student_sign`，电子签名时间、IP 与保单留痕 (SAFE-007) |
-| 10 | `internship_apply` | 学生实习申报主表 | **APPLY-009 强只读锁定**：终审通过后后端 Service 层一票否决普通写操作并置 `is_locked=1` |
-| 11 | `apply_audit_history` | 实习申报审批流转轨迹与快照表 | **退回不少于5字校验**；保存完整表单 JSON 快照，严禁物理删除 |
-
----
-
 ## 阶段规划 (Project Milestones)
 
 - [x] **阶段1**：需求深度剖析与规格定义（195项全量冻结）
@@ -182,6 +147,9 @@ npm.cmd run dev -- --port 3000
 - [x] **阶段4**：基础数据库、真实登录认证与角色工作台联调（7张基础表全端闭环）
 - [x] **阶段5**：实习任务管理、安全教育配置、安全准入和实习申报审核核心业务（11张业务表+7大页面+14项专项集成测试全通，系统测试总计23项全通）
 - [x] **阶段6**：周报填报、导师批阅、过程指导台账与学生反馈模块开发（41项历史回归基线）
-- [x] **阶段7**：中期检查、过程预警、五维成绩评定与电子归档锁定模块开发（24项专项测试，累计65项全量通过）
-- [ ] **阶段8**：系统优化与全量部署验收
-- [ ] **阶段9**：毕业设计答辩材料整理
+- [x] **阶段7**：中期检查、过程预警、五维成绩评定与电子归档锁定模块开发（24项专项测试，累计65项全量通过，封板标签 `v7.0.0-phase7-sealed`）
+- [ ] **阶段8**：系统优化与本地隔离容器部署演练
+  - [x] 阶段8核心开发与自动化回归（API-103~122、20项专项测试、85项全量回归全绿、测试隔离整改、37表架构闭环，已归档于 Commit `52d29b2` / Tag `v8.0.0-phase8-sealed`）
+  - [ ] 前端运维视图真实浏览器人工视觉与交互验收（待开展）
+  - [ ] 本地隔离容器部署演练（Dockerfile / docker-compose.yml / Nginx 反代配置及容器隔离运行，待实施）
+- [ ] **阶段9**：毕业设计答辩材料整理（待阶段8容器部署演练与浏览器人工验收全面闭环后方可启动）

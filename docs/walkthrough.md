@@ -1,70 +1,59 @@
-# 阶段7验收与归档记录
+# 高校实习全过程管理系统 - 阶段验收与归档记录
 
-## 当前里程碑
+## 一、 里程碑阶段状态总览
 
-- **阶段1至阶段7**：**【已验收、已封板 (ACCEPTED & FROZEN)】**。
-- **阶段8《系统优化与全量部署验收》**：方案设计第1版已就绪，当前状态标记为**【待审查、待实施】**，保持严格暂停。
-- **阶段9《毕业设计答辩材料整理》**：暂停，未启动。
-- **前端视觉升级**：按既定流程延期至阶段9完成并验收后执行。
+- **阶段1至阶段7**：**【已验收、已封板 (ACCEPTED & FROZEN, Tag: `v7.0.0-phase7-sealed`)】**。
+- **阶段8《系统优化与本地隔离容器部署演练》**：
+  - **核心功能开发与全量自动化测试**：**【已完成、已归档 (Commit: `52d29b2`, Tag: `v8.0.0-phase8-sealed`)】**（20 个接口落地、全量 85/85 项测试全通、测试隔离整改落地、37 张表零 DDL、正式库绝对零写入）；
+  - **前端真实浏览器人工视觉与交互验收**：**【未完成 / 待验收】**（前端组件完成静态编译构建，真实浏览器视觉与交互待验收）；
+  - **本地隔离容器部署演练 (Docker/Nginx)**：**【未实施 / 待开展】**（明确属于阶段 8 范围，宿主机尚未编写 Dockerfile / docker-compose.yml / nginx.conf，容器从未拉起）。
+- **阶段9《毕业设计答辩材料整理》**：**【暂停，未启动】**（阶段 8 容器部署演练未完成前，严禁直接启动实施）。
+- **前端视觉升级**：按既定流程延期至答辩材料就绪后执行。
 
-## 阶段7范围
+---
 
-- 接口范围：API-060～064、API-074～102，共34个冻结接口。
-- 阶段7新增物理表：11张；与阶段4至阶段6累计32张物理表保持一致。
-- 前端业务页面：MaterialManage、InspectRectify、StudentWarnCenter、WarnTicketCenter、ScoreManage、ArchiveManage。
-- 未新增API-126，未实现阶段8业务逻辑。
+## 二、 阶段 8 实施与验证结果
 
-## 实际验证结果
+### 1. 范围与契约闭环
+- **接口范围**：`API-103 ~ API-122`（共 20 个阶段 8 新增接口），与阶段 3/5 历史接口（`API-123 ~ API-125`）严格闭环于 125 规约上限，**绝无 `API-126` 及之后接口**。
+- **物理数据表**：全系统严格维持 **37 张物理表**（5 张必做支撑表，复用 `sys_operation_log`，无物理性能表，零 DDL）。
+- **测试隔离整改**：对 Phase5/6/7/Auth 测试引入专用测试数据隔离与基线快照比对断言；`application-test.yml` 彻底移除硬编码默认密码，强制使用环境变量 `${DB_PASSWORD}`；引入 `TestDatabaseSanityChecker` 强校验测试库连接。
 
-### 后端
+### 2. 自动化测试回归结果 (85/85 全绿)
+执行 `mvn.cmd test`（Surefire 原始报告验证记录）：
+- `AuthIntegrationTest`：8 项通过 (13.79s)；
+- `InternshipApplicationTests`：1 项通过 (1.44s)；
+- `Phase5IntegrationTest`：14 项通过 (1.82s)；
+- `Phase6IntegrationTest`：18 项通过 (2.56s)；
+- `Phase7IntegrationTest`：24 项通过 (3.64s)；
+- `Phase8IntegrationTest`：20 项通过 (3.49s)；
+- **全量汇总**：**85 项全部通过，Failures 0、Errors 0、Skipped 0**，`BUILD SUCCESS`。
 
-执行 `mvn.cmd test`：
-
-- AuthIntegrationTest：8项通过；
-- InternshipApplicationTests：1项通过；
-- Phase5IntegrationTest：14项通过；
-- Phase6IntegrationTest：18项通过；
-- Phase7IntegrationTest：24项通过；
-- 合计：65项，Failures 0、Errors 0、Skipped 0，`BUILD SUCCESS`。
-
-### 前端
-
+### 3. 前端构建结果
 执行 `npm.cmd run build`：
+- `vue-tsc --noEmit` 0 错误；
+- Vite 成功生成生产构建（`dist/index.html` 482B、`ServerMonitor-CLv0hoYH.js` 19.69kB、`NoticeManage-BARtrUr-.js` 14.24kB 等）；
+- 构建退出码为 0。
 
-- `vue-tsc --noEmit` 通过；
-- Vite 转换1752个模块并成功生成生产构建；
-- 构建退出码为0。
+### 4. 数据库只读快照与零污染验证
+- **正式数据库 (`internship_db`)**：37 表、55 任务、315 选课、1 卷宗、1 成绩、0 预警、4 配置、69 用户、7905 日志（最大 ID 8003）、学生 ID=4 `token_version=57` 与 `update_time=2026-09-22 23:43:38` **100% 保持一致，绝对零写入**。
+- **测试数据库 (`internship_db_test`)**：37 表、4 项参数基准、3 项白名单调度基准、通知与阅读记录 0 残留、审计日志 500 条合规留痕、学生 ID=4 `token_version=1` 未触碰。
 
-### 浏览器验收
+---
 
-执行 `frontend/verify_phase7_browser.mjs`：
+## 三、 历史阶段 7 验收成果基线回顾
 
-- 真实 Edge 验证17个阶段7路由别名；
-- 学生和教师越权场景各1项，均拦截到403；
-- 控制台未捕获致命错误：0个。
+- **阶段 7 业务代码**：`ArchiveService`, `ScoreService`, `WarnService`, `MaterialService`, `InspectService`, `RectifyService` 及其 Controller 与 Entity 100% 保持只读零修改；
+- **阶段 7 归档物理包**: `ARC20252026_student.zip` (1,001,953 字节，SHA-256 完整性摘要与解压后实测哈希 100% 吻合)；
+- **阶段 7 浏览器端到端验收**: 13 张高分辨率截图存档于 `.gemini/antigravity/brain/.../screenshots/`，控制台错误数 0。
 
-### 归档包核验与完整性留痕
+---
 
-- **归档物理包**: `ARC20252026_student.zip` (1,001,953 字节)
-- **校验内容**: 包含 7 份标准 PDF、1 份诊断 JSON 及 `manifest.json`；
-- **校验结果**: manifest 记录的 8 个文件 SHA-256 完整性摘要与解压后实测哈希 **100% 吻合**。
+## 四、 边界与下一步计划
 
-### 数据库备份与原有数据真实性留痕
-
-- **完整备份文件**: `backup/internship_db_backup_before_contract_fix_20260922_182900.sql` (1,449,400 字节，32 张完整表，可读性良好)；
-- **原有账号确认**: 真实存在共 7 个原有系统账号（用户 ID: 1~7，含 `admin`, `deptadmin`, `teacher`, `student`, `student_demo_01~03`），100% 完好无损（更正此前排版误读为 17 个的笔误）；
-- **原有教学任务确认**: 真实存在共 51 个原有历史任务（物理 ID 离散分布于 `1~31`、`1000~1054` 与 `2027`），100% 完好无损（更正此前排版误读为 1054 个或 ID 11054 的笔误）；
-- **压力演示任务**: 独立占用 `task_id = 2026`，与历史任务完全物理隔离。
-
-### 真实 Chrome CDP 浏览器端到端验收与截图归档
-
-- **控制台错误**: 四类角色 13 个阶段 7 核心路由页面全部渲染通过，控制台错误数 **0**；
-- **高清截图存档**: 13 张高分辨率 PNG 截图完整保存在 `.gemini/antigravity/brain/.../screenshots/` 目录。
-
-## 边界确认
-
-- 阶段 7 业务代码、数据库数据与表结构正式锁死，不再进行任何变更；
-- 阶段 8 方案设计（第1版）已编写并归档于 `docs/design_phase8_v1.md`，所有内容标记为**【待审查、待实施】**；
-- 未执行任何阶段 8 源码开发、DDL、建表或页面编码；
-- 未执行破坏性 DDL，未使用 DROP 或 TRUNCATE 重建历史表。
-
+1. **已封板归档内容**：阶段 8 源码、测试整改、SQL 文档及基准快照已完整提交至 Commit `52d29b2`，版本标签为 `v8.0.0-phase8-sealed`。
+2. **阶段 8 待开展工作**：
+   - 启动本地隔离容器部署演练（编写多阶段 Dockerfile、docker-compose.yml、nginx.conf，本地 3308 端口容器隔离启动与安全验证）；
+   - 前端运维页面（ServerMonitor、NoticeManage、NoticeDrawer）真实浏览器视觉与交互人工验收。
+3. **阶段 9 准入规约**：
+   - 阶段 8 容器部署演练未完成前，严禁直接启动阶段 9 答辩材料整理工作。
