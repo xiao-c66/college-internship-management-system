@@ -498,8 +498,8 @@ export const WarnPage: React.FC = () => {
               </Button>
             )}
 
-            {/* 管理员/导师转派 */}
-            {(isTeacher || isDeptAdmin || isAdmin) && !isClosed && (
+            {/* 院系管理员/超级管理员转派 */}
+            {(isDeptAdmin || isAdmin) && !isClosed && (
               <Button
                 type="default"
                 size="small"

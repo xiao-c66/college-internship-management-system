@@ -226,7 +226,7 @@ export const InspectPage: React.FC = () => {
         planId: inspectRecordForSubmit.planId,
         studentId: inspectRecordForSubmit.studentId,
         inspectionType: values.inspectionType,
-        inspectionDate: values.inspectionDate ? values.inspectionDate.format('YYYY-MM-DD HH:mm:ss') : dayjs().format('YYYY-MM-DD HH:mm:ss'),
+        inspectionDate: values.inspectionDate ? values.inspectionDate.format('YYYY-MM-DDTHH:mm:ss') : dayjs().format('YYYY-MM-DDTHH:mm:ss'),
         companySituation: values.companySituation,
         studentPerformance: values.studentPerformance,
         guidanceFulfillment: values.guidanceFulfillment,
@@ -662,14 +662,14 @@ export const InspectPage: React.FC = () => {
                               <div>检查周期: {p.startDate} ~ {p.endDate}</div>
                               <div>督导专家组: {p.expertGroup || '院系教学督导组'}</div>
                             </div>
-                            {(isDeptAdmin || isAdmin) && p.status === 'DRAFT' && (
+                            {(isDeptAdmin || isAdmin) && p.status !== 'COMPLETED' && (
                               <div style={{ textAlign: 'right', marginTop: 8 }}>
                                 <Button
                                   type="primary"
                                   size="small"
                                   onClick={() => handleExecuteSampling(p.id)}
                                 >
-                                  正式发布并触发抽样
+                                  执行按比例抽样
                                 </Button>
                               </div>
                             )}
