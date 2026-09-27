@@ -13,6 +13,7 @@ import { TaskListPage } from '../pages/task/TaskListPage';
 import { TaskDetailPage } from '../pages/task/TaskDetailPage';
 import { SafetyPage } from '../pages/safety/SafetyPage';
 import { SafetyExamPage } from '../pages/safety/SafetyExamPage';
+import { ApplyPage } from '../pages/apply/ApplyPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -105,15 +106,14 @@ export const router = createBrowserRouter([
         path: 'safety/exam',
         element: <SafetyExamPage />
       },
+      // 实习申报与审核模块 (阶段 2)
       {
         path: 'apply',
-        element: (
-          <ModulePlaceholder
-            title="实习申报管理"
-            phase="迁移规划：阶段 2"
-            description="覆盖学生实习申报草稿、正式提交与指导教师行级初审。"
-          />
-        )
+        element: <ApplyPage />
+      },
+      {
+        path: 'applies',
+        element: <ApplyPage />
       },
       {
         path: 'weekly',
