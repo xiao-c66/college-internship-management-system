@@ -8,7 +8,6 @@ import { StudentDashboard } from '../pages/dashboards/StudentDashboard';
 import { TeacherDashboard } from '../pages/dashboards/TeacherDashboard';
 import { DeptDashboard } from '../pages/dashboards/DeptDashboard';
 import { AdminDashboard } from '../pages/dashboards/AdminDashboard';
-import { ModulePlaceholder } from '../pages/business/ModulePlaceholder';
 import { TaskListPage } from '../pages/task/TaskListPage';
 import { TaskDetailPage } from '../pages/task/TaskDetailPage';
 import { SafetyPage } from '../pages/safety/SafetyPage';
@@ -22,6 +21,7 @@ import { MaterialPage } from '../pages/material/MaterialPage';
 import { ArchivePage } from '../pages/archive/ArchivePage';
 import { NoticePage } from '../pages/notice/NoticePage';
 import { MonitorPage } from '../pages/monitor/MonitorPage';
+import { ForbiddenPage } from '../pages/error/ForbiddenPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -111,6 +111,14 @@ export const router = createBrowserRouter([
         element: <SafetyPage />
       },
       {
+        path: 'safety/manage',
+        element: <SafetyPage />
+      },
+      {
+        path: 'safety/study',
+        element: <SafetyPage />
+      },
+      {
         path: 'safety/exam',
         element: <SafetyExamPage />
       },
@@ -123,6 +131,10 @@ export const router = createBrowserRouter([
         path: 'applies',
         element: <ApplyPage />
       },
+      {
+        path: 'audit',
+        element: <ApplyPage />
+      },
       // 周报与过程指导模块 (阶段 3)
       {
         path: 'weekly',
@@ -130,6 +142,26 @@ export const router = createBrowserRouter([
       },
       {
         path: 'weekly-reports',
+        element: <WeeklyPage />
+      },
+      {
+        path: 'weekly/my',
+        element: <WeeklyPage />
+      },
+      {
+        path: 'weekly/edit/:taskId/:weekNo',
+        element: <WeeklyPage />
+      },
+      {
+        path: 'weekly/review',
+        element: <WeeklyPage />
+      },
+      {
+        path: 'weekly/monitor',
+        element: <WeeklyPage />
+      },
+      {
+        path: 'guidance/manage',
         element: <WeeklyPage />
       },
       // 中期检查与整改模块 (阶段 3)
@@ -141,6 +173,30 @@ export const router = createBrowserRouter([
         path: 'inspections',
         element: <InspectPage />
       },
+      {
+        path: 'inspect/rectify',
+        element: <InspectPage />
+      },
+      {
+        path: 'midterm/inspect',
+        element: <InspectPage />
+      },
+      {
+        path: 'rectify/manage',
+        element: <InspectPage />
+      },
+      {
+        path: 'teacher/supervision/inspect',
+        element: <InspectPage />
+      },
+      {
+        path: 'dept/quality/inspections',
+        element: <InspectPage />
+      },
+      {
+        path: 'student/completion/rectify',
+        element: <InspectPage />
+      },
       // 风险预警中心模块 (阶段 3)
       {
         path: 'warn',
@@ -148,6 +204,38 @@ export const router = createBrowserRouter([
       },
       {
         path: 'warn-tickets',
+        element: <WarnPage />
+      },
+      {
+        path: 'warn/student',
+        element: <WarnPage />
+      },
+      {
+        path: 'student/warn',
+        element: <WarnPage />
+      },
+      {
+        path: 'student/warnings',
+        element: <WarnPage />
+      },
+      {
+        path: 'warn/tickets',
+        element: <WarnPage />
+      },
+      {
+        path: 'warn/manage',
+        element: <WarnPage />
+      },
+      {
+        path: 'warn/center',
+        element: <WarnPage />
+      },
+      {
+        path: 'dept/quality/warnings',
+        element: <WarnPage />
+      },
+      {
+        path: 'teacher/warn/tickets',
         element: <WarnPage />
       },
       // 五维成绩评定与申诉模块
@@ -296,10 +384,26 @@ export const router = createBrowserRouter([
         )
       },
       {
+        path: '403',
+        element: <ForbiddenPage />
+      },
+      {
+        path: '404',
+        element: <NotFoundPage />
+      },
+      {
         path: '*',
         element: <NotFoundPage />
       }
     ]
+  },
+  {
+    path: '/403',
+    element: <ForbiddenPage />
+  },
+  {
+    path: '/404',
+    element: <NotFoundPage />
   },
   {
     path: '*',
