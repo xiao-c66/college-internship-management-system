@@ -9,6 +9,8 @@ import { TeacherDashboard } from '../pages/dashboards/TeacherDashboard';
 import { DeptDashboard } from '../pages/dashboards/DeptDashboard';
 import { AdminDashboard } from '../pages/dashboards/AdminDashboard';
 import { ModulePlaceholder } from '../pages/business/ModulePlaceholder';
+import { TaskListPage } from '../pages/task/TaskListPage';
+import { TaskDetailPage } from '../pages/task/TaskDetailPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -75,16 +77,22 @@ export const router = createBrowserRouter([
           </RoleGuard>
         )
       },
-      // 业务功能模块占位（待后续阶段按序迁移）
+      // 实习任务管理模块 (阶段 2)
       {
         path: 'task',
-        element: (
-          <ModulePlaceholder
-            title="实习任务管理"
-            phase="迁移规划：阶段 2"
-            description="覆盖院系创建批次任务、导入学生、分配指导教师与任务发布流程。"
-          />
-        )
+        element: <TaskListPage />
+      },
+      {
+        path: 'task/detail/:id',
+        element: <TaskDetailPage />
+      },
+      {
+        path: 'tasks',
+        element: <TaskListPage />
+      },
+      {
+        path: 'tasks/:id',
+        element: <TaskDetailPage />
       },
       {
         path: 'safety',
