@@ -16,6 +16,7 @@ import { SafetyExamPage } from '../pages/safety/SafetyExamPage';
 import { ApplyPage } from '../pages/apply/ApplyPage';
 import { WeeklyPage } from '../pages/weekly/WeeklyPage';
 import { InspectPage } from '../pages/inspect/InspectPage';
+import { WarnPage } from '../pages/warn/WarnPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -135,15 +136,14 @@ export const router = createBrowserRouter([
         path: 'inspections',
         element: <InspectPage />
       },
+      // 风险预警中心模块 (阶段 3)
       {
         path: 'warn',
-        element: (
-          <ModulePlaceholder
-            title="风险预警中心"
-            phase="迁移规划：阶段 3"
-            description="覆盖四色规则扫描触发、预警工单指派、处置与申诉流转。"
-          />
-        )
+        element: <WarnPage />
+      },
+      {
+        path: 'warn-tickets',
+        element: <WarnPage />
       },
       {
         path: 'score',
