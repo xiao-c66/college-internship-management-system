@@ -20,6 +20,7 @@ import { WarnPage } from '../pages/warn/WarnPage';
 import { ScorePage } from '../pages/score/ScorePage';
 import { MaterialPage } from '../pages/material/MaterialPage';
 import { ArchivePage } from '../pages/archive/ArchivePage';
+import { NoticePage } from '../pages/notice/NoticePage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -226,6 +227,47 @@ export const router = createBrowserRouter([
       {
         path: 'admin/archives/all',
         element: <ArchivePage />
+      },
+      // 教学通知公告管理模块
+      {
+        path: 'admin/system/notice',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <NoticePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'system/notice',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <NoticePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'notice',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <NoticePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'notices',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <NoticePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'notice/manage',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <NoticePage />
+          </RoleGuard>
+        )
       },
       {
         path: '*',

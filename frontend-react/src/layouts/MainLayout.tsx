@@ -15,7 +15,8 @@ import {
   AlertOutlined,
   TrophyOutlined,
   FileTextOutlined,
-  InboxOutlined
+  InboxOutlined,
+  NotificationOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
@@ -132,7 +133,24 @@ export const MainLayout: React.FC = () => {
           disabled: false
         }
       ]
-    }
+    },
+    ...(hasRole(['DEPT_ADMIN', 'SYS_ADMIN'])
+      ? [
+          {
+            key: 'group-system',
+            type: 'group' as const,
+            label: '系统与协同管理',
+            children: [
+              {
+                key: '/admin/system/notice',
+                icon: <NotificationOutlined />,
+                label: '教学通知公告',
+                disabled: false
+              }
+            ]
+          }
+        ]
+      : [])
   ];
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
