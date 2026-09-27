@@ -21,6 +21,7 @@ import { ScorePage } from '../pages/score/ScorePage';
 import { MaterialPage } from '../pages/material/MaterialPage';
 import { ArchivePage } from '../pages/archive/ArchivePage';
 import { NoticePage } from '../pages/notice/NoticePage';
+import { MonitorPage } from '../pages/monitor/MonitorPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -266,6 +267,31 @@ export const router = createBrowserRouter([
         element: (
           <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
             <NoticePage />
+          </RoleGuard>
+        )
+      },
+      // 系统监控与安全审计模块 (API-116 ~ API-122)
+      {
+        path: 'admin/system/monitor',
+        element: (
+          <RoleGuard allowedRoles={['SYS_ADMIN']}>
+            <MonitorPage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'system/monitor',
+        element: (
+          <RoleGuard allowedRoles={['SYS_ADMIN']}>
+            <MonitorPage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'monitor',
+        element: (
+          <RoleGuard allowedRoles={['SYS_ADMIN']}>
+            <MonitorPage />
           </RoleGuard>
         )
       },

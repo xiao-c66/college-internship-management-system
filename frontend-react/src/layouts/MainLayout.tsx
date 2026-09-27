@@ -16,7 +16,8 @@ import {
   TrophyOutlined,
   FileTextOutlined,
   InboxOutlined,
-  NotificationOutlined
+  NotificationOutlined,
+  DesktopOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
@@ -146,7 +147,17 @@ export const MainLayout: React.FC = () => {
                 icon: <NotificationOutlined />,
                 label: '教学通知公告',
                 disabled: false
-              }
+              },
+              ...(hasRole('SYS_ADMIN')
+                ? [
+                    {
+                      key: '/admin/system/monitor',
+                      icon: <DesktopOutlined />,
+                      label: '系统监控审计',
+                      disabled: false
+                    }
+                  ]
+                : [])
             ]
           }
         ]
