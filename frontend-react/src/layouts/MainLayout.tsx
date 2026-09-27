@@ -14,7 +14,8 @@ import {
   FormOutlined,
   AlertOutlined,
   TrophyOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  InboxOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
@@ -122,6 +123,12 @@ export const MainLayout: React.FC = () => {
           key: '/score',
           icon: <TrophyOutlined />,
           label: '五维成绩评定',
+          disabled: false
+        },
+        {
+          key: '/archive/manage',
+          icon: <InboxOutlined />,
+          label: '电子档案归档',
           disabled: false
         }
       ]

@@ -19,6 +19,7 @@ import { InspectPage } from '../pages/inspect/InspectPage';
 import { WarnPage } from '../pages/warn/WarnPage';
 import { ScorePage } from '../pages/score/ScorePage';
 import { MaterialPage } from '../pages/material/MaterialPage';
+import { ArchivePage } from '../pages/archive/ArchivePage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -196,6 +197,35 @@ export const router = createBrowserRouter([
       {
         path: 'teacher/audit/materials',
         element: <MaterialPage />
+      },
+      // 电子档案归档与锁定模块
+      {
+        path: 'archive/manage',
+        element: <ArchivePage />
+      },
+      {
+        path: 'archive/freeze',
+        element: <ArchivePage />
+      },
+      {
+        path: 'archive/lock',
+        element: <ArchivePage />
+      },
+      {
+        path: 'archive/center',
+        element: <ArchivePage />
+      },
+      {
+        path: 'dept/archive/management',
+        element: <ArchivePage />
+      },
+      {
+        path: 'student/completion/archive',
+        element: <ArchivePage />
+      },
+      {
+        path: 'admin/archives/all',
+        element: <ArchivePage />
       },
       {
         path: '*',
