@@ -13,7 +13,8 @@ import {
   FileDoneOutlined,
   FormOutlined,
   AlertOutlined,
-  TrophyOutlined
+  TrophyOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
@@ -112,9 +113,15 @@ export const MainLayout: React.FC = () => {
           disabled: false
         },
         {
+          key: '/material/manage',
+          icon: <FileTextOutlined />,
+          label: '阶段材料与总结',
+          disabled: false
+        },
+        {
           key: '/score',
           icon: <TrophyOutlined />,
-          label: '五维成绩与归档',
+          label: '五维成绩评定',
           disabled: false
         }
       ]

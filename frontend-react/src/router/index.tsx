@@ -18,6 +18,7 @@ import { WeeklyPage } from '../pages/weekly/WeeklyPage';
 import { InspectPage } from '../pages/inspect/InspectPage';
 import { WarnPage } from '../pages/warn/WarnPage';
 import { ScorePage } from '../pages/score/ScorePage';
+import { MaterialPage } from '../pages/material/MaterialPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -166,6 +167,35 @@ export const router = createBrowserRouter([
       {
         path: 'score/appeal',
         element: <ScorePage />
+      },
+      // 阶段材料与总结报告模块
+      {
+        path: 'material/manage',
+        element: <MaterialPage />
+      },
+      {
+        path: 'materials',
+        element: <MaterialPage />
+      },
+      {
+        path: 'internship/materials',
+        element: <MaterialPage />
+      },
+      {
+        path: 'stage-materials',
+        element: <MaterialPage />
+      },
+      {
+        path: 'summary/manage',
+        element: <MaterialPage />
+      },
+      {
+        path: 'student/process/materials',
+        element: <MaterialPage />
+      },
+      {
+        path: 'teacher/audit/materials',
+        element: <MaterialPage />
       },
       {
         path: '*',
