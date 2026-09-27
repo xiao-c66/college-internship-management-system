@@ -1,0 +1,159 @@
+import React from 'react';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { LoginPage } from '../pages/login/LoginPage';
+import { MainLayout } from '../layouts/MainLayout';
+import { RequireAuth } from '../components/RequireAuth';
+import { RoleGuard } from '../components/RoleGuard';
+import { StudentDashboard } from '../pages/dashboards/StudentDashboard';
+import { TeacherDashboard } from '../pages/dashboards/TeacherDashboard';
+import { DeptDashboard } from '../pages/dashboards/DeptDashboard';
+import { AdminDashboard } from '../pages/dashboards/AdminDashboard';
+import { ModulePlaceholder } from '../pages/business/ModulePlaceholder';
+import { NotFoundPage } from '../pages/error/NotFoundPage';
+import { useAuthStore } from '../store/useAuthStore';
+
+// 首页智能角色重定向组件
+const DashboardRedirect: React.FC = () => {
+  const { userType } = useAuthStore();
+  if (userType === 'STUDENT') return <Navigate to="/dashboard/student" replace />;
+  if (userType === 'TEACHER') return <Navigate to="/dashboard/teacher" replace />;
+  if (userType === 'DEPT_ADMIN') return <Navigate to="/dashboard/dept" replace />;
+  if (userType === 'SYS_ADMIN') return <Navigate to="/dashboard/admin" replace />;
+  return <Navigate to="/login" replace />;
+};
+
+export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LoginPage />
+  },
+  {
+    path: '/',
+    element: (
+      <RequireAuth>
+        <MainLayout />
+      </RequireAuth>
+    ),
+    children: [
+      {
+        index: true,
+        element: <DashboardRedirect />
+      },
+      {
+        path: 'dashboard',
+        element: <DashboardRedirect />
+      },
+      {
+        path: 'dashboard/student',
+        element: (
+          <RoleGuard allowedRoles={['STUDENT', 'SYS_ADMIN']}>
+            <StudentDashboard />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'dashboard/teacher',
+        element: (
+          <RoleGuard allowedRoles={['TEACHER', 'SYS_ADMIN']}>
+            <TeacherDashboard />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'dashboard/dept',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <DeptDashboard />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'dashboard/admin',
+        element: (
+          <RoleGuard allowedRoles={['SYS_ADMIN']}>
+            <AdminDashboard />
+          </RoleGuard>
+        )
+      },
+      // 业务功能模块占位（待后续阶段按序迁移）
+      {
+        path: 'task',
+        element: (
+          <ModulePlaceholder
+            title="实习任务管理"
+            phase="迁移规划：阶段 2"
+            description="覆盖院系创建批次任务、导入学生、分配指导教师与任务发布流程。"
+          />
+        )
+      },
+      {
+        path: 'safety',
+        element: (
+          <ModulePlaceholder
+            title="安全教育与准入"
+            phase="迁移规划：阶段 2"
+            description="覆盖安全资料学习、承诺书在线签署与客观题准入考试。"
+          />
+        )
+      },
+      {
+        path: 'apply',
+        element: (
+          <ModulePlaceholder
+            title="实习申报管理"
+            phase="迁移规划：阶段 2"
+            description="覆盖学生实习申报草稿、正式提交与指导教师行级初审。"
+          />
+        )
+      },
+      {
+        path: 'weekly',
+        element: (
+          <ModulePlaceholder
+            title="周报与过程指导"
+            phase="迁移规划：阶段 3"
+            description="覆盖学生周报提交、退回重提、版本快照与指导教师日常指导记录。"
+          />
+        )
+      },
+      {
+        path: 'inspect',
+        element: (
+          <ModulePlaceholder
+            title="中期检查与整改"
+            phase="迁移规划：阶段 3"
+            description="覆盖院系抽样方案制定、现场检查记录、限期整改通知与闭环验收。"
+          />
+        )
+      },
+      {
+        path: 'warn',
+        element: (
+          <ModulePlaceholder
+            title="风险预警中心"
+            phase="迁移规划：阶段 3"
+            description="覆盖四色规则扫描触发、预警工单指派、处置与申诉流转。"
+          />
+        )
+      },
+      {
+        path: 'score',
+        element: (
+          <ModulePlaceholder
+            title="五维成绩与归档"
+            phase="迁移规划：阶段 4"
+            description="覆盖学生自评、企业评分、教师打分、成绩公示及电子档案打包导出。"
+          />
+        )
+      },
+      {
+        path: '*',
+        element: <NotFoundPage />
+      }
+    ]
+  },
+  {
+    path: '*',
+    element: <NotFoundPage />
+  }
+]);
