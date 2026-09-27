@@ -80,6 +80,10 @@ public class MaterialServiceImpl implements IMaterialService {
             if (binding == null) {
                 throw new BusinessException(403, "无权查看非负责学生的阶段材料");
             }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系查看阶段材料清单");
+            }
         }
 
         SysUser studentUser = userMapper.selectById(targetStudentId);
@@ -158,6 +162,12 @@ public class MaterialServiceImpl implements IMaterialService {
                     .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId()));
             if (binding == null) {
                 throw new BusinessException(403, "无权查看非负责学生的阶段材料");
+            }
+        }
+        if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            InternshipTask task = taskMapper.selectById(entity.getTaskId());
+            if (task != null && task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系查看阶段材料详情");
             }
         }
 
@@ -320,7 +330,7 @@ public class MaterialServiceImpl implements IMaterialService {
             throw new BusinessException(400, "阶段材料记录不存在");
         }
 
-        // 教师权限隔离校验 (TEST-P7-01, TEST-P7-03)
+        // 教师权限隔离校验 (TEST-P7-01, TEST-P7-03 & 缺口 4)
         if ("TEACHER".equals(loginUser.getUserType())) {
             InternshipTaskStudent binding = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
                     .eq(InternshipTaskStudent::getTaskId, item.getTaskId())
@@ -328,6 +338,11 @@ public class MaterialServiceImpl implements IMaterialService {
                     .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId()));
             if (binding == null) {
                 throw new BusinessException(403, "无权查验非负责学生的阶段材料");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            InternshipTask task = taskMapper.selectById(item.getTaskId());
+            if (task != null && task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系查验阶段材料");
             }
         }
 
@@ -380,6 +395,12 @@ public class MaterialServiceImpl implements IMaterialService {
                     .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId()));
             if (binding == null) {
                 throw new BusinessException(403, "无权查看非负责学生的材料历史版本");
+            }
+        }
+        if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            InternshipTask task = taskMapper.selectById(item.getTaskId());
+            if (task != null && task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系查看材料历史版本");
             }
         }
 

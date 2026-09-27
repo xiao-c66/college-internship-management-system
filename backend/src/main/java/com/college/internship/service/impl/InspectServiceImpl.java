@@ -107,9 +107,19 @@ public class InspectServiceImpl implements IInspectService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Integer executeSampling(Long planId, LoginUser loginUser) {
+        if (!"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "仅院系负责人或管理端允许执行中期检查抽样");
+        }
+
         MidtermInspectionPlan plan = planMapper.selectById(planId);
         if (plan == null || plan.getIsDeleted() == 1) {
             throw new BusinessException(400, "检查方案不存在");
+        }
+
+        if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (plan.getDeptId() != null && !plan.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系执行抽样");
+            }
         }
 
         List<InternshipTaskStudent> studentBindings = taskStudentMapper.selectList(new LambdaQueryWrapper<InternshipTaskStudent>()
@@ -313,9 +323,24 @@ public class InspectServiceImpl implements IInspectService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createRectification(RectifyCreateDTO dto, LoginUser loginUser) {
+        if (!"TEACHER".equals(loginUser.getUserType()) && !"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "当前角色无权下达限期整改通知");
+        }
+
         MidtermInspection inspection = inspectionMapper.selectById(dto.getInspectionId());
         if (inspection == null || inspection.getIsDeleted() == 1) {
             throw new BusinessException(400, "关联的检查记录不存在");
+        }
+
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            if (inspection.getTeacherId() == null || !inspection.getTeacherId().equals(loginUser.getUserId())) {
+                throw new BusinessException(403, "无权为非本人负责管辖的学生下达限期整改通知");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            InternshipTask task = taskMapper.selectById(inspection.getTaskId());
+            if (task != null && task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系负责人无权跨院系下达整改通知");
+            }
         }
 
         MidtermRectification rect = MidtermRectification.builder()
@@ -436,6 +461,33 @@ public class InspectServiceImpl implements IInspectService {
 
         if ("STUDENT".equals(loginUser.getUserType())) {
             wrapper.eq(MidtermRectification::getStudentId, loginUser.getUserId());
+        } else if ("TEACHER".equals(loginUser.getUserType())) {
+            // 教师仅查负责学生 (缺口 12)
+            List<InternshipTaskStudent> myStudents = taskStudentMapper.selectList(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId())
+                    .eq(taskId != null, InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            List<Long> studentIds = myStudents.stream().map(InternshipTaskStudent::getStudentId).toList();
+            if (studentIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            wrapper.in(MidtermRectification::getStudentId, studentIds);
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            // 院系管理员：过滤本院系任务下的整改单 (缺口 12)
+            List<InternshipTask> deptTasks = taskMapper.selectList(new LambdaQueryWrapper<InternshipTask>()
+                    .eq(InternshipTask::getDeptId, loginUser.getDeptId())
+                    .eq(InternshipTask::getIsDeleted, 0));
+            List<Long> taskIds = deptTasks.stream().map(InternshipTask::getId).toList();
+            if (taskIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            if (taskId != null) {
+                if (!taskIds.contains(taskId)) {
+                    return Collections.emptyList();
+                }
+            } else {
+                wrapper.in(MidtermRectification::getTaskId, taskIds);
+            }
         }
 
         List<MidtermRectification> list = rectificationMapper.selectList(wrapper);

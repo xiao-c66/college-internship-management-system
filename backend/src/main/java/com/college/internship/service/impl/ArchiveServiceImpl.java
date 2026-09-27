@@ -57,6 +57,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.college.internship.entity.InternshipTaskStudent;
+import com.college.internship.mapper.InternshipTaskStudentMapper;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
@@ -98,6 +100,7 @@ public class ArchiveServiceImpl implements IArchiveService {
     private final BaseDepartmentMapper departmentMapper;
     private final BaseMajorMapper majorMapper;
     private final BaseClassMapper classMapper;
+    private final InternshipTaskStudentMapper taskStudentMapper;
     private final SafetyCommitmentSignMapper commitmentSignMapper;
     private final InternshipApplyMapper applyMapper;
     private final InternshipWeeklyReportMapper weeklyReportMapper;
@@ -384,7 +387,19 @@ public class ArchiveServiceImpl implements IArchiveService {
 
         if ("STUDENT".equals(loginUser.getUserType())) {
             wrapper.eq(InternshipArchive::getStudentId, loginUser.getUserId());
-        } else if ("DEPT_ADMIN".equals(loginUser.getUserType()) && loginUser.getDeptId() != null) {
+        } else if ("TEACHER".equals(loginUser.getUserType())) {
+            // 指导教师：仅查询本人带教负责学生的卷宗 (缺口 12)
+            List<InternshipTaskStudent> myStudents = taskStudentMapper.selectList(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId())
+                    .eq(taskId != null, InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            List<Long> studentIds = myStudents.stream().map(InternshipTaskStudent::getStudentId).toList();
+            if (studentIds.isEmpty()) {
+                return java.util.Collections.emptyList();
+            }
+            wrapper.in(InternshipArchive::getStudentId, studentIds);
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            // 院系负责人：严格锁定本院系卷宗
             wrapper.eq(InternshipArchive::getDeptId, loginUser.getDeptId());
         }
 
@@ -403,6 +418,19 @@ public class ArchiveServiceImpl implements IArchiveService {
             if (!archive.getStudentId().equals(loginUser.getUserId())) {
                 throw new BusinessException(403, "无权查看其他学生的归档卷宗");
             }
+        } else if ("TEACHER".equals(loginUser.getUserType())) {
+            InternshipTaskStudent binding = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, archive.getTaskId())
+                    .eq(InternshipTaskStudent::getStudentId, archive.getStudentId())
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId())
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            if (binding == null) {
+                throw new BusinessException(403, "无权查看非负责学生的归档卷宗");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (archive.getDeptId() != null && !archive.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "无权跨院系查看归档卷宗详情");
+            }
         }
 
         return convertToArchiveVO(archive);
@@ -410,6 +438,31 @@ public class ArchiveServiceImpl implements IArchiveService {
 
     @Override
     public void exportArchiveBundle(Long id, HttpServletResponse response, LoginUser loginUser) {
+        // 0. 角色与归属权限校验 (缺口 5: 禁止学生越权导出他人归档 ZIP)
+        if ("STUDENT".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "学生无权导出归档卷宗ZIP包");
+        }
+
+        InternshipArchive archive = archiveMapper.selectById(id);
+        if (archive == null || archive.getIsDeleted() == 1) {
+            throw new BusinessException(400, "归档卷宗不存在");
+        }
+
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            InternshipTaskStudent binding = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, archive.getTaskId())
+                    .eq(InternshipTaskStudent::getStudentId, archive.getStudentId())
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId())
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            if (binding == null) {
+                throw new BusinessException(403, "无权导出非负责学生的归档卷宗");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (archive.getDeptId() != null && !archive.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "无权跨院系导出归档卷宗");
+            }
+        }
+
         // 1. 10秒防刷流控限制 (TEST-P7-24)
         long nowMs = System.currentTimeMillis();
         Long lastExport = USER_LAST_EXPORT_TIME.get(loginUser.getUserId());
@@ -419,11 +472,6 @@ public class ArchiveServiceImpl implements IArchiveService {
             throw new BusinessException(429, "导出请求过于频繁，请等待 " + waitSec + " 秒后重试");
         }
         USER_LAST_EXPORT_TIME.put(loginUser.getUserId(), nowMs);
-
-        InternshipArchive archive = archiveMapper.selectById(id);
-        if (archive == null || archive.getIsDeleted() == 1) {
-            throw new BusinessException(400, "归档卷宗不存在");
-        }
 
         // 路径安全白名单校验 (Path Traversal Guard)
         Path baseStorage = Paths.get(phase7Properties.getArchive().getStorageDir()).toAbsolutePath().normalize();
