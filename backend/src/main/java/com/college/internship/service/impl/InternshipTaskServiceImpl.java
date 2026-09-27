@@ -262,6 +262,26 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
             throw new BusinessException(404, "实习任务不存在");
         }
 
+        // 数据范围隔离校验 (缺口 8)
+        if (loginUser != null) {
+            if ("STUDENT".equals(loginUser.getUserType())) {
+                if (task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                    throw new BusinessException(403, "学生无权跨院系查看实习任务详情");
+                }
+                if (!"PUBLISHED".equals(task.getStatus()) && !"IN_PROGRESS".equals(task.getStatus()) && !"COMPLETED".equals(task.getStatus())) {
+                    throw new BusinessException(403, "无权查看未发布的草稿任务");
+                }
+            } else if ("TEACHER".equals(loginUser.getUserType())) {
+                if (task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                    throw new BusinessException(403, "指导教师无权跨院系查看实习任务详情");
+                }
+            } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+                if (task.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                    throw new BusinessException(403, "院系负责人无权跨院系查看实习任务详情");
+                }
+            }
+        }
+
         String deptName = "";
         if (task.getDeptId() != null) {
             BaseDepartment dept = departmentMapper.selectById(task.getDeptId());

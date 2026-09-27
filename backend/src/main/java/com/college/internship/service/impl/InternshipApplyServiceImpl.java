@@ -27,10 +27,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.college.internship.entity.InternshipTaskStudent;
+import com.college.internship.mapper.InternshipTaskStudentMapper;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -44,6 +47,7 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
     private final InternshipApplyMapper applyMapper;
     private final ApplyAuditHistoryMapper auditHistoryMapper;
     private final InternshipTaskMapper taskMapper;
+    private final InternshipTaskStudentMapper taskStudentMapper;
     private final BaseDepartmentMapper departmentMapper;
     private final BaseMajorMapper majorMapper;
     private final BaseClassMapper classMapper;
@@ -145,6 +149,26 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
         if (apply == null || apply.getIsDeleted() == 1) {
             throw new BusinessException(404, "实习申报记录不存在");
         }
+
+        // 行级数据权限隔离 (缺口 6)
+        if ("STUDENT".equals(loginUser.getUserType())) {
+            if (!apply.getStudentId().equals(loginUser.getUserId())) {
+                throw new BusinessException(403, "无权查看其他学生的实习申报");
+            }
+        } else if ("TEACHER".equals(loginUser.getUserType())) {
+            InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, apply.getTaskId())
+                    .eq(InternshipTaskStudent::getStudentId, apply.getStudentId())
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            if (taskStudent == null || taskStudent.getTeacherId() == null || !taskStudent.getTeacherId().equals(loginUser.getUserId())) {
+                throw new BusinessException(403, "无权查看非本人负责学生的实习申报");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (apply.getDeptId() != null && !apply.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "无权跨院系查看实习申报");
+            }
+        }
+
         return convertToVO(apply);
     }
 
@@ -158,13 +182,21 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
         }
 
         if ("TEACHER".equals(loginUser.getUserType())) {
-            // 指导教师：本院系申报
-            wrapper.eq(InternshipApply::getDeptId, loginUser.getDeptId());
+            // 指导教师：仅查询本人实际带教负责的学生申报 (缺口 9)
+            List<InternshipTaskStudent> myStudents = taskStudentMapper.selectList(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId())
+                    .eq(taskId != null, InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            List<Long> studentIds = myStudents.stream().map(InternshipTaskStudent::getStudentId).toList();
+            if (studentIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            wrapper.in(InternshipApply::getStudentId, studentIds);
             if (StringUtils.hasText(status)) {
                 wrapper.eq(InternshipApply::getApplyStatus, status);
             }
         } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
-            // 院系负责人：本院系申报
+            // 院系负责人：仅查询本院系申报
             wrapper.eq(InternshipApply::getDeptId, loginUser.getDeptId());
             if (StringUtils.hasText(status)) {
                 wrapper.eq(InternshipApply::getApplyStatus, status);
@@ -209,7 +241,15 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
         String nextStatus;
 
         if ("TEACHER".equals(userType)) {
-            // 导师初审 (REVIEW-001)
+            // 导师初审 (REVIEW-001 & 缺口 1: 只能处理本人负责的学生)
+            InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, apply.getTaskId())
+                    .eq(InternshipTaskStudent::getStudentId, apply.getStudentId())
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            if (taskStudent == null || taskStudent.getTeacherId() == null || !taskStudent.getTeacherId().equals(loginUser.getUserId())) {
+                throw new BusinessException(403, "无权审核非本人负责学生的实习申报");
+            }
+
             nodeName = "TEACHER_AUDIT";
             if ("APPROVED".equals(action)) {
                 nextStatus = "TEACHER_APPROVED";
@@ -261,6 +301,32 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
 
     @Override
     public List<AuditHistoryVO> getAuditHistories(Long applyId, LoginUser loginUser) {
+        InternshipApply apply = applyMapper.selectById(applyId);
+        if (apply == null || apply.getIsDeleted() == 1) {
+            throw new BusinessException(404, "实习申报记录不存在");
+        }
+
+        // 行级数据权限隔离 (缺口 10)
+        if (loginUser != null) {
+            if ("STUDENT".equals(loginUser.getUserType())) {
+                if (!apply.getStudentId().equals(loginUser.getUserId())) {
+                    throw new BusinessException(403, "无权查看其他学生的申报审批历史");
+                }
+            } else if ("TEACHER".equals(loginUser.getUserType())) {
+                InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                        .eq(InternshipTaskStudent::getTaskId, apply.getTaskId())
+                        .eq(InternshipTaskStudent::getStudentId, apply.getStudentId())
+                        .eq(InternshipTaskStudent::getIsDeleted, 0));
+                if (taskStudent == null || taskStudent.getTeacherId() == null || !taskStudent.getTeacherId().equals(loginUser.getUserId())) {
+                    throw new BusinessException(403, "无权查看非本人负责学生的申报审批历史");
+                }
+            } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+                if (apply.getDeptId() != null && !apply.getDeptId().equals(loginUser.getDeptId())) {
+                    throw new BusinessException(403, "无权跨院系查看申报审批历史");
+                }
+            }
+        }
+
         List<ApplyAuditHistory> list = auditHistoryMapper.selectList(new LambdaQueryWrapper<ApplyAuditHistory>()
                 .eq(ApplyAuditHistory::getApplyId, applyId)
                 .eq(ApplyAuditHistory::getIsDeleted, 0)
