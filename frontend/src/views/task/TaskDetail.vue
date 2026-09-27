@@ -117,10 +117,12 @@
             <div class="card-header-title"><strong>📑 实习材料规范清单</strong></div>
           </template>
           <ul class="material-list">
-            <li>1. 校外实习三方安全协议书 (必交)</li>
-            <li>2. 企业实习接收函或劳动合同盖章件 (必交)</li>
-            <li>3. 人身意外伤害商业保险保单凭据 (必交)</li>
-            <li>4. 实习鉴定表与用人单位盖章评价表 (归档前必交)</li>
+            <li v-for="(mat, idx) in parsedMaterialList" :key="idx" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <span>{{ idx + 1 }}. {{ mat.name }}</span>
+              <el-tag size="small" :type="mat.required ? 'danger' : 'info'">
+                {{ mat.required ? '必交' : '选交' }}
+              </el-tag>
+            </li>
           </ul>
         </el-card>
       </el-col>
@@ -271,6 +273,41 @@ const canManage = computed(() => {
 
 const task = ref<TaskItem | null>(null);
 const loading = ref(false);
+
+const parsedMaterialList = computed<Array<{ name: string; required: boolean; code?: string }>>(() => {
+  if (!task.value?.materialChecklist) {
+    return [
+      { name: '校外实习三方安全协议书', required: true },
+      { name: '企业实习接收函或劳动合同盖章件', required: true },
+      { name: '人身意外伤害商业保险保单凭据', required: true },
+      { name: '实习鉴定表与用人单位盖章评价表', required: true }
+    ];
+  }
+  try {
+    const list = JSON.parse(task.value.materialChecklist);
+    if (Array.isArray(list)) {
+      return list.map((item: any) => {
+        if (typeof item === 'string') return { name: item, required: true };
+        return {
+          name: item.materialName || item.name || String(item),
+          required: item.required !== false,
+          code: item.materialCode || item.code
+        };
+      });
+    }
+  } catch {
+    return task.value.materialChecklist.split(/[\n,;]/).filter(Boolean).map((s: string) => ({
+      name: s.trim(),
+      required: true
+    }));
+  }
+  return [
+    { name: '校外实习三方安全协议书', required: true },
+    { name: '企业实习接收函或劳动合同盖章件', required: true },
+    { name: '人身意外伤害商业保险保单凭据', required: true },
+    { name: '实习鉴定表与用人单位盖章评价表', required: true }
+  ];
+});
 
 // 学生与导师分配状态
 const taskStudents = ref<TaskStudentItem[]>([]);

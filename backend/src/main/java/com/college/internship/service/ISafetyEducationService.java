@@ -5,6 +5,7 @@ import com.college.internship.dto.ExamSubmitDTO;
 import com.college.internship.dto.SafetyMaterialDTO;
 import com.college.internship.dto.SafetyQuestionDTO;
 import com.college.internship.entity.SafetyMaterialItem;
+import com.college.internship.entity.SafetyTestQuestion;
 import com.college.internship.security.LoginUser;
 import com.college.internship.vo.ExamResultVO;
 import com.college.internship.vo.QuestionVO;
@@ -42,6 +43,11 @@ public interface ISafetyEducationService extends IBaseService {
      * 删除试题
      */
     void deleteQuestion(Long id, LoginUser loginUser);
+
+    /**
+     * 管理端获取安全测试客观题库列表 (SAFE-003)
+     */
+    List<SafetyTestQuestion> listQuestions(Long taskId, LoginUser loginUser);
 
     /**
      * 学生获取在线考试试卷 (脱敏隐藏正确答案)

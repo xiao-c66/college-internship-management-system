@@ -41,9 +41,10 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="viewMaterial(row)">查看正文</el-button>
+                <el-button link type="danger" size="small" @click="handleDeleteMaterial(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -77,11 +78,17 @@
               </template>
             </el-table-column>
             <el-table-column prop="analysis" label="题目解析" min-width="200" show-overflow-tooltip />
-            <el-table-column label="状态" width="100">
+            <el-table-column label="状态" width="90">
               <template #default="{ row }">
                 <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
                   {{ row.status === 1 ? '启用' : '停用' }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="viewQuestionDetail(row)">查看详情</el-button>
+                <el-button link type="danger" size="small" @click="handleDeleteQuestion(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -151,6 +158,24 @@
         <el-form-item label="题干描述" required>
           <el-input v-model="questionForm.stem" type="textarea" :rows="3" placeholder="请输入明确无歧义的安全规范测试题干..." />
         </el-form-item>
+        <!-- 动态选项配置区域 -->
+        <el-form-item label="试题选项" required>
+          <div style="width: 100%">
+            <div v-if="questionForm.questionType === 'JUDGMENT'" style="color: #909399; font-size: 13px; margin-bottom: 8px;">
+              判断题固定提供两个标准选项：<strong>TRUE (正确)</strong> 与 <strong>FALSE (错误)</strong>
+            </div>
+            <div v-else>
+              <div v-for="(opt, idx) in questionForm.options" :key="idx" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <el-tag effect="plain" style="width: 36px; text-align: center; font-weight: bold;">{{ opt.key }}</el-tag>
+                <el-input v-model="opt.text" :placeholder="`请输入选项 ${opt.key} 的具体描述`" style="flex: 1;" />
+                <el-button link type="danger" :disabled="questionForm.options.length <= 2" @click="removeOption(idx)">删除</el-button>
+              </div>
+              <el-button type="primary" link :icon="Plus" @click="addOption" :disabled="questionForm.options.length >= 8">
+                + 添加选项
+              </el-button>
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="试题分值" required>
           <el-input-number v-model="questionForm.score" :min="5" :max="50" :step="5" />
           <span style="margin-left: 8px">分</span>
@@ -168,6 +193,31 @@
       </template>
     </el-dialog>
 
+    <!-- 查看试题详情对话框 -->
+    <el-dialog v-model="questionDetailVisible" title="安全试题详情与解析" width="650px">
+      <div v-if="selectedQuestion" class="question-detail-box">
+        <div class="detail-row"><strong>题型：</strong><el-tag size="small">{{ formatQuestionType(selectedQuestion.questionType) }}</el-tag></div>
+        <div class="detail-row"><strong>分值：</strong>{{ selectedQuestion.score }} 分</div>
+        <div class="detail-row"><strong>适用范围：</strong>{{ selectedQuestion.taskId ? '任务专属' : '全校通用' }}</div>
+        <div class="detail-row"><strong>题干：</strong><div class="stem-text">{{ selectedQuestion.stem }}</div></div>
+        <div class="detail-row"><strong>候选选项：</strong>
+          <div v-if="parsedQuestionOptions(selectedQuestion).length > 0" class="options-list">
+            <div v-for="op in parsedQuestionOptions(selectedQuestion)" :key="op.key" class="option-item">
+              <span class="opt-badge">{{ op.key }}.</span> {{ op.text }}
+            </div>
+          </div>
+          <div v-else style="color: #909399;">无详细选项</div>
+        </div>
+        <div class="detail-row"><strong>标准答案：</strong><el-tag type="success">{{ selectedQuestion.correctAnswer }}</el-tag></div>
+        <div class="detail-row"><strong>法规依据与解析：</strong>
+          <div class="analysis-box">{{ selectedQuestion.analysis || '暂无解析' }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="questionDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 查看资料正文对话框 -->
     <el-dialog v-model="viewDialogVisible" :title="activeMaterialTitle" width="600px">
       <div class="material-detail-body">{{ activeMaterialBody }}</div>
@@ -181,17 +231,20 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@/store/modules/user';
 import {
   getTaskList,
   TaskItem,
   getSafetyMaterials,
   createSafetyMaterial,
+  deleteSafetyMaterial,
   getSafetyQuestions,
   createSafetyQuestion,
+  deleteSafetyQuestion,
   SafetyMaterial,
-  SafetyQuestion
+  SafetyQuestion,
+  QuestionOption
 } from '@/api';
 
 const userStore = useUserStore();
@@ -208,6 +261,8 @@ const submitLoading = ref(false);
 const materialDialogVisible = ref(false);
 const questionDialogVisible = ref(false);
 const viewDialogVisible = ref(false);
+const questionDetailVisible = ref(false);
+const selectedQuestion = ref<SafetyQuestion | null>(null);
 const activeMaterialTitle = ref('');
 const activeMaterialBody = ref('');
 
@@ -224,7 +279,13 @@ const questionForm = reactive({
   taskId: undefined as number | undefined,
   questionType: 'SINGLE_CHOICE',
   stem: '',
-  score: 30,
+  options: [
+    { key: 'A', text: '' },
+    { key: 'B', text: '' },
+    { key: 'C', text: '' },
+    { key: 'D', text: '' }
+  ] as Array<{ key: string; text: string }>,
+  score: 10,
   correctAnswer: 'B',
   analysis: ''
 });
@@ -288,20 +349,55 @@ const handleSaveMaterial = async () => {
     });
     ElMessage.success('安全资料已成功发布');
     materialDialogVisible.value = false;
-    loadMaterials();
+    await loadMaterials();
   } finally {
     submitLoading.value = false;
   }
+};
+
+const handleDeleteMaterial = (row: SafetyMaterial) => {
+  ElMessageBox.confirm(`确定要删除安全资料《${row.title}》吗？删除后学生端将无法学习此项规程。`, '安全资料删除确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    try {
+      await deleteSafetyMaterial(row.id);
+      ElMessage.success('安全资料已成功移除');
+      await loadMaterials();
+    } catch (e: any) {
+      ElMessage.error(e?.message || '删除安全资料失败');
+    }
+  }).catch(() => {});
 };
 
 const openCreateQuestionDialog = () => {
   questionForm.taskId = undefined;
   questionForm.questionType = 'SINGLE_CHOICE';
   questionForm.stem = '';
-  questionForm.score = 30;
+  questionForm.options = [
+    { key: 'A', text: '' },
+    { key: 'B', text: '' },
+    { key: 'C', text: '' },
+    { key: 'D', text: '' }
+  ];
+  questionForm.score = 10;
   questionForm.correctAnswer = 'B';
   questionForm.analysis = '';
   questionDialogVisible.value = true;
+};
+
+const addOption = () => {
+  const nextChar = String.fromCharCode(65 + questionForm.options.length);
+  questionForm.options.push({ key: nextChar, text: '' });
+};
+
+const removeOption = (index: number) => {
+  questionForm.options.splice(index, 1);
+  // 重新排列key
+  questionForm.options.forEach((opt, idx) => {
+    opt.key = String.fromCharCode(65 + idx);
+  });
 };
 
 const handleSaveQuestion = async () => {
@@ -309,34 +405,77 @@ const handleSaveQuestion = async () => {
     ElMessage.error('请填写题干描述与标准答案');
     return;
   }
+
+  let finalOptions: QuestionOption[] = [];
+  if (questionForm.questionType === 'JUDGMENT') {
+    finalOptions = [
+      { key: 'TRUE', text: '正确' },
+      { key: 'FALSE', text: '错误' }
+    ];
+  } else {
+    // 校验选项
+    for (const opt of questionForm.options) {
+      if (!opt.text || opt.text.trim() === '') {
+        ElMessage.error(`请填写选项 ${opt.key} 的具体描述`);
+        return;
+      }
+    }
+    finalOptions = questionForm.options.map(o => ({ key: o.key, text: o.text.trim() }));
+  }
+
   submitLoading.value = true;
   try {
-    const options = questionForm.questionType === 'JUDGMENT'
-      ? [{ key: 'TRUE', text: '正确' }, { key: 'FALSE', text: '错误' }]
-      : [
-          { key: 'A', text: '选项 A 描述' },
-          { key: 'B', text: '选项 B 描述' },
-          { key: 'C', text: '选项 C 描述' },
-          { key: 'D', text: '选项 D 描述' }
-        ];
-
     await createSafetyQuestion({
       taskId: questionForm.taskId || undefined,
       questionType: questionForm.questionType,
-      stem: questionForm.stem,
-      options: options,
+      stem: questionForm.stem.trim(),
+      options: JSON.stringify(finalOptions),
       score: questionForm.score,
       correctAnswer: questionForm.correctAnswer.trim().toUpperCase(),
-      analysis: questionForm.analysis,
+      analysis: questionForm.analysis ? questionForm.analysis.trim() : '',
       sortOrder: 1,
       status: 1
     });
     ElMessage.success('试题已成功添加到题库');
     questionDialogVisible.value = false;
-    loadQuestions();
+    await loadQuestions();
   } finally {
     submitLoading.value = false;
   }
+};
+
+const handleDeleteQuestion = (row: SafetyQuestion) => {
+  ElMessageBox.confirm(`确定要从题库中删除该测试试题（ID: ${row.id}）吗？`, '删除试题确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    try {
+      await deleteSafetyQuestion(row.id);
+      ElMessage.success('试题已从题库中成功删除');
+      await loadQuestions();
+    } catch (e: any) {
+      ElMessage.error(e?.message || '删除试题失败');
+    }
+  }).catch(() => {});
+};
+
+const viewQuestionDetail = (row: SafetyQuestion) => {
+  selectedQuestion.value = row;
+  questionDetailVisible.value = true;
+};
+
+const parsedQuestionOptions = (q: SafetyQuestion): QuestionOption[] => {
+  if (!q) return [];
+  if (Array.isArray(q.options)) return q.options;
+  if (typeof q.options === 'string') {
+    try {
+      return JSON.parse(q.options);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 };
 
 const viewMaterial = (row: SafetyMaterial) => {
@@ -426,6 +565,57 @@ onMounted(() => {
     background: #f8fafc;
     padding: 16px;
     border-radius: 6px;
+  }
+
+  .question-detail-box {
+    font-size: 14px;
+    line-height: 1.7;
+
+    .detail-row {
+      margin-bottom: 12px;
+
+      strong {
+        color: #303133;
+      }
+
+      .stem-text {
+        margin-top: 4px;
+        padding: 10px;
+        background: #f8fafc;
+        border-radius: 4px;
+        color: #2c3e50;
+        font-weight: 500;
+      }
+
+      .options-list {
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+
+        .option-item {
+          padding: 6px 10px;
+          background: #fafafa;
+          border: 1px solid #ebeef5;
+          border-radius: 4px;
+
+          .opt-badge {
+            font-weight: bold;
+            color: #409eff;
+            margin-right: 4px;
+          }
+        }
+      }
+
+      .analysis-box {
+        margin-top: 6px;
+        padding: 10px;
+        background: #f0f9eb;
+        border: 1px solid #e1f3d8;
+        border-radius: 4px;
+        color: #67c23a;
+      }
+    }
   }
 }
 </style>

@@ -224,7 +224,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import type { FormInstance } from 'element-plus';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   getTaskList,
   getMyApply,
@@ -386,7 +386,14 @@ const buildPayload = () => {
 };
 
 const handleExceptionChange = () => {
-  ElMessage.info('正在前往实习变更申请模块...');
+  ElMessageBox.alert(
+    '根据《高校学生校外实习安全与管理规程》，实习申报经院系终审通过后已生效锁定。若确因实习企业发生经营异常、撤岗或不可抗力等特殊原因需变更实习单位，请提前向校内指导教师与学院教学管理科递交《校外实习变更审批表》盖章件，由学院主管退回申请后重新填报。',
+    '校外实习单位与岗位重大变更指引',
+    {
+      confirmButtonText: '已知晓流程',
+      type: 'warning'
+    }
+  );
 };
 
 const viewSnapshot = (dataStr?: string) => {

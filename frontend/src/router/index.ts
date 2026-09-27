@@ -20,6 +20,17 @@ const routes: RouteRecordRaw[] = [
     },
     children: [
       {
+        path: 'dashboard',
+        redirect: () => {
+          const userType = localStorage.getItem('userType');
+          if (userType === 'STUDENT') return '/dashboard/student';
+          if (userType === 'TEACHER') return '/dashboard/teacher';
+          if (userType === 'DEPT_ADMIN') return '/dashboard/dept';
+          if (userType === 'SYS_ADMIN') return '/dashboard/admin';
+          return '/login';
+        }
+      },
+      {
         path: 'dashboard/student',
         name: 'StudentDashboard',
         component: () => import('@/views/dashboard/StudentDashboard.vue'),

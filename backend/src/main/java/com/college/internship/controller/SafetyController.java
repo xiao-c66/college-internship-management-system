@@ -6,6 +6,7 @@ import com.college.internship.dto.ExamSubmitDTO;
 import com.college.internship.dto.SafetyMaterialDTO;
 import com.college.internship.dto.SafetyQuestionDTO;
 import com.college.internship.entity.SafetyMaterialItem;
+import com.college.internship.entity.SafetyTestQuestion;
 import com.college.internship.security.LoginUser;
 import com.college.internship.service.ISafetyEducationService;
 import com.college.internship.vo.ExamResultVO;
@@ -91,6 +92,14 @@ public class SafetyController {
                                        @AuthenticationPrincipal LoginUser loginUser) {
         safetyService.deleteQuestion(id, loginUser);
         return Result.success("试题已删除", null);
+    }
+
+    @GetMapping("/questions")
+    @Operation(summary = "查询安全测试题库列表 (SAFE-003)", description = "供管理人员维护客观题试题")
+    public Result<List<SafetyTestQuestion>> listQuestions(@RequestParam(value = "taskId", required = false) Long taskId,
+                                                          @AuthenticationPrincipal LoginUser loginUser) {
+        List<SafetyTestQuestion> list = safetyService.listQuestions(taskId, loginUser);
+        return Result.success(list);
     }
 
     @GetMapping("/exam/paper")

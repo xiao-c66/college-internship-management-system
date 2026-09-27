@@ -42,7 +42,7 @@
         <div class="paper-meta">共 {{ questions.length }} 题 (题库全量题目随机乱序洗牌) | 卷面总分 {{ totalPossibleScore }} 分</div>
       </div>
 
-      <el-form label-position="top">
+      <el-form label-position="top" @submit.prevent>
         <div
           v-for="(q, index) in questions"
           :key="q.id"
@@ -61,7 +61,7 @@
           <div class="question-options" v-if="q.questionType === 'SINGLE_CHOICE' || q.questionType === 'JUDGMENT'">
             <el-radio-group v-model="answers[q.id]">
               <div v-for="opt in q.options" :key="opt.key" class="option-row">
-                <el-radio :label="opt.key">
+                <el-radio :value="opt.key" :label="opt.key">
                   <span class="opt-key">{{ opt.key }}.</span>
                   <span class="opt-text">{{ opt.text }}</span>
                 </el-radio>
@@ -73,7 +73,7 @@
           <div class="question-options" v-else-if="q.questionType === 'MULTIPLE_CHOICE'">
             <el-checkbox-group v-model="multiAnswers[q.id]">
               <div v-for="opt in q.options" :key="opt.key" class="option-row">
-                <el-checkbox :label="opt.key">
+                <el-checkbox :value="opt.key" :label="opt.key">
                   <span class="opt-key">{{ opt.key }}.</span>
                   <span class="opt-text">{{ opt.text }}</span>
                 </el-checkbox>
@@ -86,8 +86,9 @@
           <el-button
             type="primary"
             size="large"
+            native-type="button"
             :loading="submitLoading"
-            @click="handleSubmitExam"
+            @click.prevent="handleSubmitExam"
           >
             完成作答并提交试卷 (即时判分)
           </el-button>
@@ -106,6 +107,7 @@ import {
   getTaskList,
   getExamPaper,
   submitExam,
+  getSafetyStatus,
   SafetyQuestion,
   ExamResult,
   ExamAnswerItem
@@ -151,7 +153,21 @@ const loadPaper = async () => {
       return;
     }
     const res = await getExamPaper(tid);
-    questions.value = res.data || [];
+    const rawList = res.data || [];
+    questions.value = rawList.map(q => {
+      let parsedOptions = q.options;
+      if (typeof q.options === 'string') {
+        try {
+          parsedOptions = JSON.parse(q.options);
+        } catch {
+          parsedOptions = [];
+        }
+      }
+      return {
+        ...q,
+        options: Array.isArray(parsedOptions) ? parsedOptions : []
+      };
+    });
     // 初始化默认多选题数组
     questions.value.forEach(q => {
       if (q.questionType === 'MULTIPLE_CHOICE') {
@@ -206,13 +222,34 @@ const handleSubmitExam = async () => {
       answers: submitItems
     });
     examResult.value = res.data;
-    if (res.data.isPassed) {
+    if (res.data && res.data.isPassed) {
       ElMessage.success('恭喜！安全准入考试顺利达标通过！');
     } else {
-      ElMessage.warning(`考试成绩未达${res.data.passingScore || '及格'}分及格线，请复习后重测`);
+      ElMessage.warning(`考试成绩未达${res.data?.passingScore || '及格'}分及格线，请复习后重测`);
     }
   } catch (e: any) {
-    ElMessage.error(e.message || '交卷失败');
+    const errorMsg = e.response?.data?.message || e.message || '';
+    if (errorMsg.includes('已通过')) {
+      ElMessage.info('系统核验：您此前已顺利通过本次安全准入测试，已为您同步达标记录');
+      try {
+        const statusRes = await getSafetyStatus(taskId.value);
+        if (statusRes.data) {
+          examResult.value = {
+            attemptId: 0,
+            attemptNo: statusRes.data.examAttempts || 1,
+            totalScore: statusRes.data.highestScore ?? 100,
+            passingScore: statusRes.data.passingScore ?? 80,
+            isPassed: statusRes.data.isPassed ?? 1,
+            resultDesc: '安全准入考核达标 (已通过)',
+            submitTime: statusRes.data.studyCompleteTime
+          } as any;
+          return;
+        }
+      } catch (statusErr) {
+        console.error('获取安全状态失败', statusErr);
+      }
+    }
+    ElMessage.error(errorMsg || '交卷失败');
   } finally {
     submitLoading.value = false;
   }

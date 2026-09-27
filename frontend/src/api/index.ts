@@ -198,12 +198,20 @@ export function createSafetyMaterial(data: any) {
   return request.post<any, { code: number; data: SafetyMaterial }>('/safety/materials', data);
 }
 
+export function deleteSafetyMaterial(id: number) {
+  return request.delete<any, { code: number; message: string }>(`/safety/materials/${id}`);
+}
+
 export function getSafetyQuestions(params?: { taskId?: number }) {
   return request.get<any, { code: number; data: SafetyQuestion[] }>('/safety/questions', { params });
 }
 
 export function createSafetyQuestion(data: any) {
   return request.post<any, { code: number; data: SafetyQuestion }>('/safety/questions', data);
+}
+
+export function deleteSafetyQuestion(id: number) {
+  return request.delete<any, { code: number; message: string }>(`/safety/questions/${id}`);
 }
 
 export function getExamPaper(taskId: number) {

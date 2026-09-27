@@ -161,6 +161,20 @@ public class SafetyEducationServiceImpl implements ISafetyEducationService {
     }
 
     @Override
+    public List<SafetyTestQuestion> listQuestions(Long taskId, LoginUser loginUser) {
+        if (!"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "仅院系负责人或管理员可查看题库列表 (SAFE-003)");
+        }
+        LambdaQueryWrapper<SafetyTestQuestion> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SafetyTestQuestion::getIsDeleted, 0);
+        if (taskId != null) {
+            wrapper.and(w -> w.eq(SafetyTestQuestion::getTaskId, taskId).or().isNull(SafetyTestQuestion::getTaskId));
+        }
+        wrapper.orderByAsc(SafetyTestQuestion::getSortOrder).orderByAsc(SafetyTestQuestion::getId);
+        return questionMapper.selectList(wrapper);
+    }
+
+    @Override
     public List<QuestionVO> getExamPaper(Long taskId, LoginUser loginUser) {
         if (loginUser != null && "STUDENT".equals(loginUser.getUserType())) {
             InternshipTaskStudent ts = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()

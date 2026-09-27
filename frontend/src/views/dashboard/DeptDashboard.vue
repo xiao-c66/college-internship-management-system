@@ -34,30 +34,42 @@
     <!-- 院系待复核业务池与质检 -->
     <div class="content-grid">
       <div class="audit-pool academic-card">
-        <div class="box-title">待院系复核事务池 (真实业务状态良好)</div>
+        <div class="box-title">待院系复核事务池 (点击直接前往审核闭环)</div>
         <div class="audit-items">
-          <div class="audit-row">
+          <div class="audit-row clickable-row" @click="handleNavigate('/audit')">
             <span class="type">[申报终审]</span>
-            <span class="desc">集中实习基地学生申报待复审</span>
-            <el-tag size="small" type="info">0 件</el-tag>
+            <span class="desc">学生校外实习申报待院系二级终审批复</span>
+            <el-tag size="small" :type="pendingApplyCount > 0 ? 'warning' : 'success'">
+              {{ pendingApplyCount }} 件
+            </el-tag>
+            <el-icon class="arrow-icon"><ArrowRight /></el-icon>
           </div>
-          <div class="audit-row">
-            <span class="type">[变更复核]</span>
-            <span class="desc">重大用人单位跨市变更审批申请</span>
-            <el-tag size="small" type="info">0 件</el-tag>
-          </div>
-          <div class="audit-row">
+          <div class="audit-row clickable-row" @click="handleNavigate('/warn/tickets')">
             <span class="type">[预警复核]</span>
-            <span class="desc">指导教师提交误报调查申请待复核 (API-090)</span>
-            <el-tag size="small" type="info">0 件</el-tag>
+            <span class="desc">异常预警工单处置审核与院系升级督办</span>
+            <el-tag size="small" :type="pendingWarnCount > 0 ? 'danger' : 'success'">
+              {{ pendingWarnCount }} 件
+            </el-tag>
+            <el-icon class="arrow-icon"><ArrowRight /></el-icon>
+          </div>
+          <div class="audit-row clickable-row" @click="handleNavigate('/inspect/rectify')">
+            <span class="type">[整改终审]</span>
+            <span class="desc">中期督导限期整改通知与学生整改销号终审</span>
+            <el-tag size="small" :type="pendingRectifyCount > 0 ? 'warning' : 'success'">
+              {{ pendingRectifyCount }} 件
+            </el-tag>
+            <el-icon class="arrow-icon"><ArrowRight /></el-icon>
           </div>
         </div>
       </div>
 
       <div class="notice-box academic-card">
-        <div class="box-title">教学巡查与中期检查备忘</div>
-        <p class="notice-desc">阶段4基础数据库已联通，全院学生、教师及班级组织架构数据已完成初始化加载。</p>
-        <el-tag size="small" type="success">数据源健康连接：MySQL 8.0</el-tag>
+        <div class="box-title">教学巡查与管理备忘</div>
+        <p class="notice-desc">全院学生、教师及班级组织架构数据已联通，实习各阶段业务已受行级权限隔离保护。</p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <el-button type="primary" plain size="small" @click="handleNavigate('/task')">管理实习批次任务 →</el-button>
+          <el-button type="warning" plain size="small" @click="handleNavigate('/safety/manage')">配置安全教育与题库 →</el-button>
+        </div>
       </div>
     </div>
   </div>
@@ -65,12 +77,24 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { ArrowRight } from '@element-plus/icons-vue';
 import service from '@/utils/request';
 import { useUserStore } from '@/store/modules/user';
+import { listApplies } from '@/api';
+import { getWarnTickets } from '@/api/phase7';
 
+const router = useRouter();
 const userStore = useUserStore();
 const loading = ref(false);
 const summaryData = ref<any>(null);
+const pendingApplyCount = ref(0);
+const pendingWarnCount = ref(0);
+const pendingRectifyCount = ref(0);
+
+const handleNavigate = (path: string) => {
+  if (path) router.push(path);
+};
 
 const fetchSummary = async () => {
   loading.value = true;
@@ -78,6 +102,19 @@ const fetchSummary = async () => {
     const res: any = await service.get('/dashboard/summary');
     if (res.code === 200 && res.data) {
       summaryData.value = res.data;
+    }
+
+    // 动态拉取待终审申报与预警工单
+    const [appliesRes, warnRes] = await Promise.allSettled([
+      listApplies({ status: 'PENDING_DEPT' }),
+      getWarnTickets({ status: 'PENDING_REVIEW' })
+    ]);
+
+    if (appliesRes.status === 'fulfilled' && appliesRes.value?.data) {
+      pendingApplyCount.value = appliesRes.value.data.length;
+    }
+    if (warnRes.status === 'fulfilled' && warnRes.value?.data) {
+      pendingWarnCount.value = warnRes.value.data.length;
     }
   } catch (e) {
     console.error('获取工作台数据失败', e);
@@ -171,6 +208,28 @@ onMounted(() => {
     padding: 10px 12px;
     background-color: $bg-color;
     border-radius: $radius-base;
+    transition: all 0.2s ease;
+
+    &.clickable-row {
+      cursor: pointer;
+      &:hover {
+        background-color: #ecf5ff;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
+
+        .arrow-icon {
+          color: $primary-color;
+          transform: translateX(4px);
+        }
+      }
+    }
+
+    .arrow-icon {
+      margin-left: 8px;
+      color: #c0c4cc;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
 
     .type {
       font-weight: 600;

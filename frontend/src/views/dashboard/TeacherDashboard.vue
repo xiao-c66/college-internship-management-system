@@ -13,25 +13,25 @@
 
     <!-- 教师核心指标四宫格卡片 (数据取自真实数据库) -->
     <div class="metric-grid">
-      <div class="metric-card academic-card">
+      <div class="metric-card academic-card clickable-card" @click="handleNavigate('/task')">
         <div class="num">{{ summaryData?.metrics?.assignedStudentCount ?? 0 }}</div>
         <div class="label">本院负责学生基数</div>
-        <div class="sub">基于系统用户库真实统计</div>
+        <div class="sub">点击管理实习批次与名单 →</div>
       </div>
-      <div class="metric-card academic-card warning">
+      <div class="metric-card academic-card warning clickable-card" @click="handleNavigate('/audit?status=PENDING_TEACHER')">
         <div class="num">{{ summaryData?.metrics?.pendingReviewCount ?? 0 }}</div>
         <div class="label">待初审实习申报</div>
-        <div class="sub">暂无积压待审单据</div>
+        <div class="sub">点击进入审批中心初审 →</div>
       </div>
-      <div class="metric-card academic-card info">
+      <div class="metric-card academic-card info clickable-card" @click="scrollToSafePanel">
         <div class="num">{{ summaryData?.metrics?.safetyCompletedRate || '0%' }}</div>
         <div class="label">安全教育达标率</div>
-        <div class="sub">对应 SAFE-008 进度监控</div>
+        <div class="sub">点击查看学生达标台账 ↓</div>
       </div>
-      <div class="metric-card academic-card danger">
+      <div class="metric-card academic-card danger clickable-card" @click="handleNavigate('/warn/tickets')">
         <div class="num">{{ summaryData?.metrics?.activeWarningCount ?? 0 }}</div>
         <div class="label">活跃预警工单数</div>
-        <div class="sub">状态良好，暂无失联红线</div>
+        <div class="sub">点击进入预警中心核实 →</div>
       </div>
     </div>
 
@@ -155,6 +155,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import service from '@/utils/request';
 import { useUserStore } from '@/store/modules/user';
@@ -166,11 +167,23 @@ import {
   StudentSafetyProgress
 } from '@/api';
 
+const router = useRouter();
 const userStore = useUserStore();
 const loading = ref(false);
 const studentsLoading = ref(false);
 const remindLoading = ref(false);
 const summaryData = ref<any>(null);
+
+const handleNavigate = (path: string) => {
+  if (path) router.push(path);
+};
+
+const scrollToSafePanel = () => {
+  const el = document.querySelector('.safe-panel');
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth' });
+  }
+};
 
 const tasks = ref<TaskItem[]>([]);
 const selectedTaskId = ref<number | undefined>(undefined);
@@ -317,6 +330,16 @@ onMounted(async () => {
 .metric-card {
   text-align: center;
   padding: 20px 16px;
+  transition: all 0.2s ease;
+
+  &.clickable-card {
+    cursor: pointer;
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+      border-color: #c6e2ff;
+    }
+  }
 
   .num {
     font-size: 28px;
