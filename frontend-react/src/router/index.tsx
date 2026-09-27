@@ -17,6 +17,7 @@ import { ApplyPage } from '../pages/apply/ApplyPage';
 import { WeeklyPage } from '../pages/weekly/WeeklyPage';
 import { InspectPage } from '../pages/inspect/InspectPage';
 import { WarnPage } from '../pages/warn/WarnPage';
+import { ScorePage } from '../pages/score/ScorePage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -145,15 +146,26 @@ export const router = createBrowserRouter([
         path: 'warn-tickets',
         element: <WarnPage />
       },
+      // 五维成绩评定与申诉模块
       {
         path: 'score',
-        element: (
-          <ModulePlaceholder
-            title="五维成绩与归档"
-            phase="迁移规划：阶段 4"
-            description="覆盖学生自评、企业评分、教师打分、成绩公示及电子档案打包导出。"
-          />
-        )
+        element: <ScorePage />
+      },
+      {
+        path: 'score/manage',
+        element: <ScorePage />
+      },
+      {
+        path: 'grade/manage',
+        element: <ScorePage />
+      },
+      {
+        path: 'grade/eval',
+        element: <ScorePage />
+      },
+      {
+        path: 'score/appeal',
+        element: <ScorePage />
       },
       {
         path: '*',
