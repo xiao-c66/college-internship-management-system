@@ -15,6 +15,7 @@ import { SafetyPage } from '../pages/safety/SafetyPage';
 import { SafetyExamPage } from '../pages/safety/SafetyExamPage';
 import { ApplyPage } from '../pages/apply/ApplyPage';
 import { WeeklyPage } from '../pages/weekly/WeeklyPage';
+import { InspectPage } from '../pages/inspect/InspectPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -125,15 +126,14 @@ export const router = createBrowserRouter([
         path: 'weekly-reports',
         element: <WeeklyPage />
       },
+      // 中期检查与整改模块 (阶段 3)
       {
         path: 'inspect',
-        element: (
-          <ModulePlaceholder
-            title="中期检查与整改"
-            phase="迁移规划：阶段 3"
-            description="覆盖院系抽样方案制定、现场检查记录、限期整改通知与闭环验收。"
-          />
-        )
+        element: <InspectPage />
+      },
+      {
+        path: 'inspections',
+        element: <InspectPage />
       },
       {
         path: 'warn',
