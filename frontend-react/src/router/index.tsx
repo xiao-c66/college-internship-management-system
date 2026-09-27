@@ -14,6 +14,7 @@ import { TaskDetailPage } from '../pages/task/TaskDetailPage';
 import { SafetyPage } from '../pages/safety/SafetyPage';
 import { SafetyExamPage } from '../pages/safety/SafetyExamPage';
 import { ApplyPage } from '../pages/apply/ApplyPage';
+import { WeeklyPage } from '../pages/weekly/WeeklyPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -115,15 +116,14 @@ export const router = createBrowserRouter([
         path: 'applies',
         element: <ApplyPage />
       },
+      // 周报与过程指导模块 (阶段 3)
       {
         path: 'weekly',
-        element: (
-          <ModulePlaceholder
-            title="周报与过程指导"
-            phase="迁移规划：阶段 3"
-            description="覆盖学生周报提交、退回重提、版本快照与指导教师日常指导记录。"
-          />
-        )
+        element: <WeeklyPage />
+      },
+      {
+        path: 'weekly-reports',
+        element: <WeeklyPage />
       },
       {
         path: 'inspect',
