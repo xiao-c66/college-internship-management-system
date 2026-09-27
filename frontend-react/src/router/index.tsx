@@ -11,6 +11,8 @@ import { AdminDashboard } from '../pages/dashboards/AdminDashboard';
 import { ModulePlaceholder } from '../pages/business/ModulePlaceholder';
 import { TaskListPage } from '../pages/task/TaskListPage';
 import { TaskDetailPage } from '../pages/task/TaskDetailPage';
+import { SafetyPage } from '../pages/safety/SafetyPage';
+import { SafetyExamPage } from '../pages/safety/SafetyExamPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -94,15 +96,14 @@ export const router = createBrowserRouter([
         path: 'tasks/:id',
         element: <TaskDetailPage />
       },
+      // 安全教育与准入模块 (阶段 2)
       {
         path: 'safety',
-        element: (
-          <ModulePlaceholder
-            title="安全教育与准入"
-            phase="迁移规划：阶段 2"
-            description="覆盖安全资料学习、承诺书在线签署与客观题准入考试。"
-          />
-        )
+        element: <SafetyPage />
+      },
+      {
+        path: 'safety/exam',
+        element: <SafetyExamPage />
       },
       {
         path: 'apply',
