@@ -127,15 +127,36 @@ mvn spring-boot:run
 
 ### 3. 前端工程编译与运行
 
+**默认前端 (React 18 + TypeScript + Ant Design 5)**：
 ```bash
-cd frontend
-# 生产打包校验
-npm.cmd run build
+# 方式 A：在项目根目录下直接启动 (推荐)
+npm.cmd run dev
 
-# 启动前端开发调试服务
-npm.cmd run dev -- --port 3000
+# 方式 B：双击运行根目录下脚本
+.\start-frontend.bat
+
+# 方式 C：进入 frontend-react 目录启动
+cd frontend-react
+npm.cmd run build  # 生产打包校验
+npm.cmd run dev    # 启动开发调试服务
 ```
-- 前端访问地址：`http://localhost:3000`
+- **默认前端访问地址**：`http://localhost:3000`
+- **反向代理配置**：`/api` 自动代理转发至后端 `http://127.0.0.1:8080`
+
+**Vue 3 前端回退版本 (Vue 3 + Element Plus，原样完整保留)**：
+```bash
+# 方式 A：在项目根目录下运行回退命令
+npm.cmd run dev:vue
+
+# 方式 B：双击运行根目录下回退脚本
+.\start-frontend-vue-fallback.bat
+
+# 方式 C：进入 frontend 目录启动
+cd frontend
+npm.cmd run dev
+```
+- **回退版本访问地址**：`http://localhost:3000`
+
 
 ---
 

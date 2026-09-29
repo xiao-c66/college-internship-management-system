@@ -353,11 +353,13 @@ public class MaterialServiceImpl implements IMaterialService {
             }
         } else if (!isApproved) {
             throw new BusinessException(400, "查验动作非法 (仅支持 APPROVED 或 RETURNED)");
+        } else if (dto.getAuditScore() == null) {
+            throw new BusinessException(400, "查验通过必须录入考评分数");
         }
 
         LocalDateTime now = LocalDateTime.now();
         item.setStatus(isApproved ? "APPROVED" : "RETURNED");
-        item.setAuditScore(dto.getAuditScore());
+        item.setAuditScore(isApproved ? dto.getAuditScore() : null);
         item.setAuditComment(dto.getAuditComment());
         item.setAuditTeacherId(loginUser.getUserId());
         item.setAuditTime(now);

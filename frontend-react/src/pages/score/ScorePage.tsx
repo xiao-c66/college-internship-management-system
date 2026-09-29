@@ -37,12 +37,14 @@ import { getTaskList, type TaskItem } from '../../api/task';
 import {
   getScoreList,
   getMyScore,
+  getScoreDetail,
   submitScore,
   auditScore,
   publishScores,
   submitAppeal,
   arbitrateAppeal,
-  type ScoreSummaryVO
+  type ScoreSummaryVO,
+  type ScoreAuditHistoryVO
 } from '../../api/score';
 
 const { Title, Text, Paragraph } = Typography;
@@ -87,9 +89,11 @@ export const ScorePage: React.FC = () => {
   // 院系仲裁弹窗
   const [arbitrateModalOpen, setArbitrateModalOpen] = useState(false);
   const [arbitrateSubmitting, setArbitrateSubmitting] = useState(false);
+  const [arbitrateLoading, setArbitrateLoading] = useState(false);
   const [arbitrateForm] = Form.useForm();
   const [arbitrateActionType, setArbitrateActionType] = useState<'PASS' | 'REJECT'>('PASS');
   const [activeArbitrateRow, setActiveArbitrateRow] = useState<ScoreSummaryVO | null>(null);
+  const [activeAppeal, setActiveAppeal] = useState<ScoreAuditHistoryVO | null>(null);
 
   // 初始化加载
   useEffect(() => {
@@ -206,8 +210,11 @@ export const ScorePage: React.FC = () => {
 
   const canStudentAppeal = (score: ScoreSummaryVO | null) => {
     if (!score) return false;
-    if (score.status === 'PUBLICITY' || score.status === 'PUBLISHED') return true;
-    return false;
+    if (score.status !== 'PUBLICITY') return false;
+    if (score.auditHistory && score.auditHistory.some(h => h.action === 'APPEAL_APPLY')) {
+      return false;
+    }
+    return true;
   };
 
   // 教师录入弹窗
@@ -279,9 +286,10 @@ export const ScorePage: React.FC = () => {
   };
 
   // 仲裁弹窗
-  const handleOpenArbitrateModal = (row: ScoreSummaryVO) => {
+  const handleOpenArbitrateModal = async (row: ScoreSummaryVO) => {
     setActiveArbitrateRow(row);
     setArbitrateActionType('PASS');
+    setActiveAppeal(null);
     arbitrateForm.setFieldsValue({
       action: 'PASS',
       approvalDocNo: '',
@@ -292,17 +300,52 @@ export const ScorePage: React.FC = () => {
       materialScore: row.materialScore ?? 85,
       summaryScore: row.summaryScore ?? 85
     });
-    setArbitrateModalOpen(true);
+
+    try {
+      setArbitrateLoading(true);
+      const detailRes = await getScoreDetail(row.id);
+      if (detailRes.code === 200 && detailRes.data) {
+        const histories = detailRes.data.auditHistory || [];
+        const applyRecords = histories.filter(h => h.action === 'APPEAL_APPLY');
+        if (applyRecords.length === 0) {
+          message.warning(`学生【${row.studentName}】尚未提交成绩复核申诉申请`);
+          return;
+        }
+        const latestApply = applyRecords[applyRecords.length - 1];
+        const applyIndex = histories.indexOf(latestApply);
+        const resolvedAfter = histories.slice(applyIndex + 1).find(
+          h => h.action === 'APPEAL_PASS' || h.action === 'APPEAL_REJECT'
+        );
+        if (resolvedAfter) {
+          message.info(
+            `学生【${row.studentName}】的申诉已完成裁决（${resolvedAfter.action === 'APPEAL_PASS' ? '准予调分' : '申诉驳回'}）`
+          );
+          return;
+        }
+        setActiveAppeal(latestApply);
+        setArbitrateModalOpen(true);
+      } else {
+        message.error('获取成绩详情失败');
+      }
+    } catch (e: any) {
+      message.error(e?.message || '读取申诉记录失败');
+    } finally {
+      setArbitrateLoading(false);
+    }
   };
 
   const handleArbitrateSubmit = async () => {
     try {
       const values = await arbitrateForm.validateFields();
       if (!activeArbitrateRow) return;
+      if (!activeAppeal) {
+        message.error('未找到有效的申诉申请记录');
+        return;
+      }
       setArbitrateSubmitting(true);
-      const res = await arbitrateAppeal(activeArbitrateRow.id, {
+      const res = await arbitrateAppeal(activeAppeal.id, {
         action: values.action,
-        approvalDocNo: values.approvalDocNo,
+        approvalDocNo: values.action === 'PASS' ? values.approvalDocNo : undefined,
         auditComment: values.auditComment,
         enterpriseScore: values.action === 'PASS' ? values.enterpriseScore : undefined,
         processScore: values.action === 'PASS' ? values.processScore : undefined,
@@ -311,8 +354,9 @@ export const ScorePage: React.FC = () => {
         summaryScore: values.action === 'PASS' ? values.summaryScore : undefined
       });
       if (res.code === 200) {
-        message.success('申诉复核仲裁决定已执行并完成区块链审计存证！');
+        message.success(values.action === 'PASS' ? '申诉复核仲裁决定已执行并完成区块链审计存证！' : '成绩申诉已驳回，维持原评定成绩！');
         setArbitrateModalOpen(false);
+        setActiveAppeal(null);
         loadScoresData();
       }
     } catch (e: any) {
@@ -505,9 +549,15 @@ export const ScorePage: React.FC = () => {
           <Button
             type="link"
             size="small"
-            onClick={() => {
+            onClick={async () => {
               setCurrentScore(row);
               setDetailModalOpen(true);
+              try {
+                const res = await getScoreDetail(row.id);
+                if (res.code === 200 && res.data) {
+                  setCurrentScore(res.data);
+                }
+              } catch (e) {}
             }}
           >
             详情
@@ -689,7 +739,7 @@ export const ScorePage: React.FC = () => {
                   <Title level={5} style={{ marginBottom: 16 }}>成绩申诉与复核轨迹</Title>
                   <Timeline
                     items={studentScore.auditHistory.map(item => ({
-                      color: item.action.includes('PASS') ? 'green' : 'blue',
+                      color: item.action.includes('PASS') ? 'green' : (item.action.includes('REJECT') ? 'red' : 'blue'),
                       children: (
                         <div>
                           <div>
@@ -848,7 +898,7 @@ export const ScorePage: React.FC = () => {
                 <Divider orientation="left" style={{ margin: '16px 0 12px 0' }}>申诉复核与调分审计快照</Divider>
                 <Timeline
                   items={currentScore.auditHistory.map(h => ({
-                    color: h.action.includes('PASS') ? 'green' : 'blue',
+                    color: h.action.includes('PASS') ? 'green' : (h.action.includes('REJECT') ? 'red' : 'blue'),
                     children: (
                       <div>
                         <div>
@@ -992,11 +1042,35 @@ export const ScorePage: React.FC = () => {
         open={arbitrateModalOpen}
         onCancel={() => setArbitrateModalOpen(false)}
         onOk={handleArbitrateSubmit}
-        confirmLoading={arbitrateSubmitting}
+        confirmLoading={arbitrateSubmitting || arbitrateLoading}
         okText="确认提交仲裁决定"
         cancelText="取消"
         width={600}
       >
+        {activeAppeal && (
+          <Alert
+            type="info"
+            showIcon
+            message={`学生【${activeArbitrateRow?.studentName || ''}】成绩申诉申请`}
+            description={
+              <div style={{ marginTop: 6 }}>
+                <div><Text strong>申诉理由：</Text>{activeAppeal.appealReason}</div>
+                {activeAppeal.appealAttachmentUrl && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text strong>佐证凭据：</Text>
+                    <a href={activeAppeal.appealAttachmentUrl} target="_blank" rel="noreferrer">
+                      查看佐证附件
+                    </a>
+                  </div>
+                )}
+                <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+                  申请时间：{activeAppeal.operateTime}
+                </div>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Form form={arbitrateForm} layout="vertical">
           <Form.Item name="action" label="仲裁裁定" rules={[{ required: true }]}>
             <Radio.Group onChange={e => setArbitrateActionType(e.target.value)}>

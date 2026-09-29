@@ -21,8 +21,10 @@ import { MaterialPage } from '../pages/material/MaterialPage';
 import { ArchivePage } from '../pages/archive/ArchivePage';
 import { NoticePage } from '../pages/notice/NoticePage';
 import { MonitorPage } from '../pages/monitor/MonitorPage';
+import { UserManagePage } from '../pages/user/UserManagePage';
 import { ForbiddenPage } from '../pages/error/ForbiddenPage';
 import { NotFoundPage } from '../pages/error/NotFoundPage';
+import { DevDiagnosticPage } from '../pages/diagnostic/DevDiagnosticPage';
 import { useAuthStore } from '../store/useAuthStore';
 
 // 首页智能角色重定向组件
@@ -259,7 +261,23 @@ export const router = createBrowserRouter([
         path: 'score/appeal',
         element: <ScorePage />
       },
+      {
+        path: 'teacher/score/evaluate',
+        element: <ScorePage />
+      },
+      {
+        path: 'student/completion/score',
+        element: <ScorePage />
+      },
+      {
+        path: 'dept/decision/score-appeals',
+        element: <ScorePage />
+      },
       // 阶段材料与总结报告模块
+      {
+        path: 'material',
+        element: <MaterialPage />
+      },
       {
         path: 'material/manage',
         element: <MaterialPage />
@@ -358,6 +376,31 @@ export const router = createBrowserRouter([
           </RoleGuard>
         )
       },
+      // 系统用户与账号批量管理模块
+      {
+        path: 'admin/system/user',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <UserManagePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'system/user',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <UserManagePage />
+          </RoleGuard>
+        )
+      },
+      {
+        path: 'users',
+        element: (
+          <RoleGuard allowedRoles={['DEPT_ADMIN', 'SYS_ADMIN']}>
+            <UserManagePage />
+          </RoleGuard>
+        )
+      },
       // 系统监控与安全审计模块 (API-116 ~ API-122)
       {
         path: 'admin/system/monitor',
@@ -382,6 +425,10 @@ export const router = createBrowserRouter([
             <MonitorPage />
           </RoleGuard>
         )
+      },
+      {
+        path: 'dev-diag',
+        element: <DevDiagnosticPage />
       },
       {
         path: '403',

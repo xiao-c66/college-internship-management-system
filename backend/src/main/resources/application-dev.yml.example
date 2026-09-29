@@ -28,3 +28,13 @@ upload:
   base-path: ${UPLOAD_BASE_PATH:your_local_upload_path_here}
   # 示例: 单文件最大上限 MB (根据校方部署参数设定，如 20)
   max-size-mb: ${UPLOAD_MAX_SIZE_MB:20}
+
+# 首次登录强制改密策略开关 (API-125: 开发/联调测试环境可设为 false 仅允许白名单测试账号跳过阻断，生产默认强制开启阻断)
+system:
+  security:
+    force-password-change: false
+    # 示例: 默认必须为空，仅允许通过外部环境变量显式注入专用测试账号，例如 export TEST_SKIPPABLE_USERNAMES=test_student,test_teacher
+    test-skippable-usernames: ${TEST_SKIPPABLE_USERNAMES:}
+
+
+

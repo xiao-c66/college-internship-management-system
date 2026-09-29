@@ -24,6 +24,8 @@ system:
     stage: PHASE_7_ACCEPTED
   security:
     trusted-proxies: "127.0.0.1,::1,0:0:0:0:0:0:0:1,localhost" # 可信反向代理列表，非可信来源严禁使用代理IP标头
+    force-password-change: ${FORCE_PASSWORD_CHANGE:true} # 首次登录强制改密策略开关，生产默认强制开启阻断 (API-125)
+    test-skippable-usernames: ${TEST_SKIPPABLE_USERNAMES:} # 测试沙箱跳过改密白名单 (仅在 force-password-change=false 时生效，生产默认全空)
   cache:
     caffeine:
       max-size: 1000                          # 有界单机缓存最大对象容量
@@ -87,4 +89,22 @@ internship:
       max-single-attachment-size-mb: 10
       export-max-bundle-size-mb: 100
       export-rate-limit-seconds: 10
+
+# 验证码与系统消息外发通道配置 (密钥仅从环境变量注入，生产环境未配置时必须安全失败)
+notification:
+  delivery:
+    sms:
+      provider: ${SMS_PROVIDER:none}
+      access-key: ${SMS_ACCESS_KEY:}
+      secret-key: ${SMS_SECRET_KEY:}
+      sign-name: ${SMS_SIGN_NAME:}
+      template-code: ${SMS_TEMPLATE_CODE:}
+    email:
+      provider: ${EMAIL_PROVIDER:none}
+      host: ${SMTP_HOST:}
+      port: ${SMTP_PORT:465}
+      username: ${SMTP_USERNAME:}
+      password: ${SMTP_PASSWORD:}
+      from: ${SMTP_FROM:}
+
 

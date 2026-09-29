@@ -30,6 +30,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final SysUserMapper sysUserMapper;
+    private final PasswordPolicyManager passwordPolicyManager;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -49,8 +50,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 // 查询数据库核对 token_version (全端退出与改密即时失效核心机制)
                 SysUser user = sysUserMapper.selectById(userId);
-                if (user != null && user.getStatus() == 1 && user.getIsDeleted() == 0) {
+                if (user != null && (user.getStatus() == 1 || user.getStatus() == 2) && user.getIsDeleted() == 0) {
                     if (tokenVersionInClaim != null && tokenVersionInClaim.equals(user.getTokenVersion())) {
+                        // 首次登录强制改密后端安全防御 (API-125: 默认 Fail-Close 强阻断；仅允许测试沙箱白名单账号跳过)
+                        if (user.getStatus() == 2 && !isAllowedPendingChangePassword(request.getRequestURI())) {
+                            if (passwordPolicyManager.isMandatoryForceChange(user.getUsername(), user.getStatus())) {
+                                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                                response.setContentType("application/json;charset=UTF-8");
+                                response.getWriter().write("{\"code\":403,\"message\":\"您的账号处于待修改密码状态，请先修改初始临时密码后继续访问\",\"data\":null}");
+                                return;
+                            }
+                        }
+
                         List<String> roles = sysUserMapper.selectRoleCodesByUserId(userId);
                         if (!roles.contains(roleCode) && StringUtils.hasText(roleCode)) {
                             roles.add(roleCode);
@@ -84,5 +95,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isAllowedPendingChangePassword(String uri) {
+        if (uri == null) return false;
+        return uri.equals("/api/v1/users/change-password")
+                || uri.equals("/api/v1/auth/logout")
+                || uri.equals("/api/v1/auth/me");
     }
 }

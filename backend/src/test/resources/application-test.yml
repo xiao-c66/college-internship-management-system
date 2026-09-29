@@ -65,6 +65,8 @@ system:
     stage: PHASE_7_ACCEPTED
   security:
     trusted-proxies: "127.0.0.1,::1,0:0:0:0:0:0:0:1,localhost"
+    force-password-change: false # 单元测试环境允许跳过强制改密 (API-125)
+    test-skippable-usernames: ${TEST_SKIPPABLE_USERNAMES:test_student,test_whitelisted_user}
   cache:
     caffeine:
       max-size: 1000

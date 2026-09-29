@@ -66,3 +66,8 @@ scratch/
 
 # Local test screenshots (browser verification artifacts)
 test_screenshots_phase8/
+
+# Generated archive exports and browser screenshots
+backend/data/archives/
+frontend/test_screenshots_*/
+test_screenshots_whitelist/

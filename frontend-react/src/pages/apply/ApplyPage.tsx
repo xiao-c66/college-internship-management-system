@@ -20,7 +20,9 @@ import {
   Typography,
   message,
   Divider,
-  Modal
+  Modal,
+  Tabs,
+  Badge
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -35,7 +37,8 @@ import {
   ClockCircleOutlined,
   SendOutlined,
   SaveOutlined,
-  EyeOutlined
+  EyeOutlined,
+  SwapOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -49,6 +52,13 @@ import {
   ApplyVO,
   AuditHistoryVO
 } from '../../api/apply';
+import {
+  listApplyChangesApi,
+  getActiveApplyChangeApi,
+  ApplyChangeVO
+} from '../../api/applyChange';
+import { ApplyChangeModal } from './ApplyChangeModal';
+import { ApplyChangeAuditDrawer, getChangeStatusTag } from './ApplyChangeAuditDrawer';
 import { getTaskList, TaskItem } from '../../api/task';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -102,6 +112,44 @@ export const ApplyPage: React.FC = () => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditForm] = Form.useForm();
 
+  // 实习重大变更状态
+  const [activeChange, setActiveChange] = useState<ApplyChangeVO | null>(null);
+  const [changeModalVisible, setChangeModalVisible] = useState(false);
+  const [changeAuditDrawerVisible, setChangeAuditDrawerVisible] = useState(false);
+  const [selectedChange, setSelectedChange] = useState<ApplyChangeVO | null>(null);
+
+  // 教师/管理员重大变更Tab状态
+  const [manageTab, setManageTab] = useState<'applies' | 'changes'>('applies');
+  const [changeList, setChangeList] = useState<ApplyChangeVO[]>([]);
+  const [changeFilterStatus, setChangeFilterStatus] = useState<string>('');
+  const [changeLoading, setChangeLoading] = useState(false);
+
+  const loadActiveChange = async (applyId: number) => {
+    try {
+      const res: any = await getActiveApplyChangeApi(applyId);
+      if (res.code === 200) {
+        setActiveChange(res.data || null);
+      }
+    } catch {}
+  };
+
+  const loadChangeList = async (taskId?: number, status?: string) => {
+    setChangeLoading(true);
+    try {
+      const res: any = await listApplyChangesApi({
+        taskId: taskId || selectedTaskId,
+        status: status !== undefined ? status : changeFilterStatus
+      });
+      if (res.code === 200 && res.data) {
+        setChangeList(res.data);
+      }
+    } catch (err: any) {
+      message.error(err.message || '加载变更申请列表失败');
+    } finally {
+      setChangeLoading(false);
+    }
+  };
+
   // 1. 初始化加载任务批次列表
   useEffect(() => {
     const fetchTasks = async () => {
@@ -140,6 +188,9 @@ export const ApplyPage: React.FC = () => {
             ? [dayjs(res.data.startDate), dayjs(res.data.endDate)]
             : undefined
         });
+        if (res.data.isLocked === 1 || res.data.applyStatus === 'APPROVED') {
+          loadActiveChange(res.data.id);
+        }
       } else {
         setStudentApply(null);
         studentForm.resetFields();
@@ -174,9 +225,13 @@ export const ApplyPage: React.FC = () => {
     if (isStudent) {
       loadStudentApply(selectedTaskId);
     } else {
-      loadManageApplies(selectedTaskId, filterStatus);
+      if (manageTab === 'applies') {
+        loadManageApplies(selectedTaskId, filterStatus);
+      } else {
+        loadChangeList(selectedTaskId, changeFilterStatus);
+      }
     }
-  }, [selectedTaskId, isStudent]);
+  }, [selectedTaskId, isStudent, manageTab]);
 
   // 学生暂存草稿
   const handleSaveDraft = async () => {
@@ -367,6 +422,89 @@ export const ApplyPage: React.FC = () => {
     }
   ];
 
+  // 实习重大变更单据表格列定义
+  const changeColumns: ColumnsType<ApplyChangeVO> = [
+    {
+      title: '变更单号',
+      dataIndex: 'id',
+      key: 'id',
+      width: 90,
+      render: (id) => <Text code>#{id}</Text>
+    },
+    {
+      title: '学生信息',
+      key: 'student',
+      width: 140,
+      render: (_, record) => (
+        <div>
+          <div style={{ fontWeight: 'bold' }}>{record.studentName}</div>
+          <Text type="secondary" style={{ fontSize: 12 }}>{record.studentNumber}</Text>
+        </div>
+      )
+    },
+    {
+      title: '实习重大变更走向',
+      key: 'transition',
+      width: 280,
+      render: (_, record) => (
+        <div>
+          <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+            原单位：<span style={{ textDecoration: 'line-through' }}>{record.origCompanyName}</span>
+          </div>
+          <div style={{ fontWeight: 'bold', color: '#1890ff', fontSize: 13 }}>
+            拟变更为：{record.newCompanyName}
+          </div>
+          <Tag color="blue" style={{ marginTop: 2 }}>{record.newJobPosition}</Tag>
+        </div>
+      )
+    },
+    {
+      title: '变更事由',
+      dataIndex: 'changeReason',
+      key: 'changeReason',
+      ellipsis: true,
+      width: 220
+    },
+    {
+      title: '审批状态',
+      dataIndex: 'changeStatus',
+      key: 'changeStatus',
+      width: 130,
+      render: (status) => getChangeStatusTag(status)
+    },
+    {
+      title: '申请时间',
+      dataIndex: 'createTime',
+      key: 'createTime',
+      width: 160
+    },
+    {
+      title: '操作',
+      key: 'action',
+      fixed: 'right',
+      width: 130,
+      render: (_, record) => {
+        const needTeacherAudit = (userType === 'TEACHER' || userType === 'SYS_ADMIN') && record.changeStatus === 'PENDING_TEACHER';
+        const needDeptAudit = (userType === 'DEPT_ADMIN' || userType === 'SYS_ADMIN') && record.changeStatus === 'PENDING_DEPT';
+        const highlight = needTeacherAudit || needDeptAudit;
+
+        return (
+          <Button
+            size="small"
+            type={highlight ? 'primary' : 'default'}
+            icon={highlight ? <AuditOutlined /> : <EyeOutlined />}
+            onClick={() => {
+              setSelectedChange(record);
+              setChangeAuditDrawerVisible(true);
+            }}
+          >
+            {highlight ? '执行审核' : '查看详情'}
+          </Button>
+        );
+      }
+    }
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* 顶部标题与任务批次切换 */}
@@ -406,20 +544,75 @@ export const ApplyPage: React.FC = () => {
       {/* ======================= 学生端视图 ======================= */}
       {isStudent && (
         <>
-          {/* APPLY-009 审核生效锁定提示 */}
+          {/* APPLY-009 审核生效锁定提示与重大信息变更入口 */}
           {isApprovedLocked && (
-            <Alert
-              type="warning"
-              showIcon
-              icon={<LockOutlined />}
-              message="🔒 实习信息已经审核生效 (APPROVED)，主数据已物理锁定只读 (APPLY-009)"
-              description={
-                <div>
-                  您的实习申请已顺利完成指导教师初审与二级院系终审复核。单位、岗位、地址、联系人和起止时间变动禁止普通修改。
-                  如遇实习单位变更或协议重大变动，请前往实习变更模块提交正式变更申请！
+            <Card style={{ marginBottom: 20, borderColor: '#faad14', backgroundColor: '#fffbe6' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <LockOutlined style={{ fontSize: 24, color: '#faad14', marginTop: 2 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 15, color: '#d48806', marginBottom: 4 }}>
+                    🔒 实习信息已经审核生效 (APPROVED)，主数据已物理锁定只读 (APPLY-009)
+                  </div>
+                  <Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 13 }}>
+                    您的实习申请已顺利完成指导教师初审与二级院系终审复核。单位、岗位、地址、联系人和起止时间变动禁止普通修改。
+                    如遇实习单位变更或协议重大变动，请在此发起正式变更申请！
+                  </Paragraph>
+
+                  {/* 变更申请状态展示 */}
+                  {activeChange ? (
+                    <div style={{ backgroundColor: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #ffe58f', marginTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <Space>
+                          <Text strong>📋 当前实习重大变更单 #{activeChange.id}</Text>
+                          {getChangeStatusTag(activeChange.changeStatus)}
+                        </Space>
+                        <Button
+                          size="small"
+                          type="primary"
+                          ghost
+                          icon={<EyeOutlined />}
+                          onClick={() => {
+                            setSelectedChange(activeChange);
+                            setChangeAuditDrawerVisible(true);
+                          }}
+                        >
+                          查看变更流转进度
+                        </Button>
+                      </div>
+                      <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>
+                        拟变更单位：<Text strong>{activeChange.newCompanyName}</Text>（岗位：{activeChange.newJobPosition}）
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        变更事由：{activeChange.changeReason} | 提交时间：{activeChange.createTime}
+                      </Text>
+
+                      {(activeChange.changeStatus === 'REJECTED' || activeChange.changeStatus === 'APPROVED') && (
+                        <div style={{ marginTop: 8 }}>
+                          <Button
+                            type="dashed"
+                            size="small"
+                            icon={<SwapOutlined />}
+                            onClick={() => setChangeModalVisible(true)}
+                          >
+                            再次发起新的重大变更申请
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 8 }}>
+                      <Button
+                        type="primary"
+                        icon={<SwapOutlined />}
+                        onClick={() => setChangeModalVisible(true)}
+                      >
+                        发起实习重大信息变更申请
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              }
-            />
+              </div>
+            </Card>
           )}
 
           {/* 退回修改提示 */}
@@ -621,62 +814,158 @@ export const ApplyPage: React.FC = () => {
       {/* ======================= 管理端/教师端审批中心 ======================= */}
       {!isStudent && (
         <>
-          {/* 筛选过滤卡片 */}
-          <Card size="small">
-            <Row gutter={[16, 16]} align="middle">
-              <Col xs={24} md={8}>
-                <Space>
-                  <Text>申报状态：</Text>
-                  <Select
-                    style={{ width: 220 }}
-                    value={filterStatus}
-                    onChange={(val) => {
-                      setFilterStatus(val);
-                      loadManageApplies(selectedTaskId, val);
-                    }}
-                    options={[
-                      { label: '全部状态', value: '' },
-                      { label: '待导师初审 (SUBMITTED)', value: 'SUBMITTED' },
-                      { label: '初审通过·待终审 (TEACHER_APPROVED)', value: 'TEACHER_APPROVED' },
-                      { label: '导师初审退回 (TEACHER_REJECTED)', value: 'TEACHER_REJECTED' },
-                      { label: '终审通过已锁定 (APPROVED)', value: 'APPROVED' },
-                      { label: '院系终审退回 (DEPT_REJECTED)', value: 'DEPT_REJECTED' }
-                    ]}
-                  />
-                </Space>
-              </Col>
-              <Col xs={24} md={16} style={{ textAlign: 'right' }}>
-                <Space>
-                  <Button
-                    type="primary"
-                    icon={<SearchOutlined />}
-                    onClick={() => loadManageApplies(selectedTaskId, filterStatus)}
-                  >
-                    查询单据
-                  </Button>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={() => {
-                      setFilterStatus('');
-                      loadManageApplies(selectedTaskId, '');
-                    }}
-                  >
-                    重置
-                  </Button>
-                </Space>
-              </Col>
-            </Row>
-          </Card>
-
-          {/* 单据数据表格 */}
           <Card>
-            <Table
-              columns={columns}
-              dataSource={applies}
-              rowKey="id"
-              loading={loading}
-              pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 笔申报记录` }}
-              scroll={{ x: 1200 }}
+            <Tabs
+              activeKey={manageTab}
+              onChange={(k) => setManageTab(k as any)}
+              items={[
+                {
+                  key: 'applies',
+                  label: '实习申报初审/终审',
+                  children: (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* 筛选过滤卡片 */}
+                      <Card size="small">
+                        <Row gutter={[16, 16]} align="middle">
+                          <Col xs={24} md={8}>
+                            <Space>
+                              <Text>申报状态：</Text>
+                              <Select
+                                style={{ width: 220 }}
+                                value={filterStatus}
+                                onChange={(val) => {
+                                  setFilterStatus(val);
+                                  loadManageApplies(selectedTaskId, val);
+                                }}
+                                options={[
+                                  { label: '全部状态', value: '' },
+                                  { label: '待导师初审 (SUBMITTED)', value: 'SUBMITTED' },
+                                  { label: '初审通过·待终审 (TEACHER_APPROVED)', value: 'TEACHER_APPROVED' },
+                                  { label: '导师初审退回 (TEACHER_REJECTED)', value: 'TEACHER_REJECTED' },
+                                  { label: '终审通过已锁定 (APPROVED)', value: 'APPROVED' },
+                                  { label: '院系终审退回 (DEPT_REJECTED)', value: 'DEPT_REJECTED' }
+                                ]}
+                              />
+                            </Space>
+                          </Col>
+                          <Col xs={24} md={16} style={{ textAlign: 'right' }}>
+                            <Space>
+                              <Button
+                                type="primary"
+                                icon={<SearchOutlined />}
+                                onClick={() => loadManageApplies(selectedTaskId, filterStatus)}
+                              >
+                                查询单据
+                              </Button>
+                              <Button
+                                icon={<ReloadOutlined />}
+                                onClick={() => {
+                                  setFilterStatus('');
+                                  loadManageApplies(selectedTaskId, '');
+                                }}
+                              >
+                                重置
+                              </Button>
+                            </Space>
+                          </Col>
+                        </Row>
+                      </Card>
+
+                      {/* 单据数据表格 */}
+                      <Table
+                        columns={columns}
+                        dataSource={applies}
+                        rowKey="id"
+                        loading={loading}
+                        pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 笔申报记录` }}
+                        scroll={{ x: 1200 }}
+                      />
+                    </div>
+                  )
+                },
+                {
+                  key: 'changes',
+                  label: (
+                    <span>
+                      <SwapOutlined style={{ marginRight: 6 }} />
+                      实习重大信息变更审核
+                      {changeList.filter(c =>
+                        (userType === 'TEACHER' && c.changeStatus === 'PENDING_TEACHER') ||
+                        (userType === 'DEPT_ADMIN' && c.changeStatus === 'PENDING_DEPT')
+                      ).length > 0 && (
+                        <Badge
+                          count={
+                            changeList.filter(c =>
+                              (userType === 'TEACHER' && c.changeStatus === 'PENDING_TEACHER') ||
+                              (userType === 'DEPT_ADMIN' && c.changeStatus === 'PENDING_DEPT')
+                            ).length
+                          }
+                          style={{ marginLeft: 8 }}
+                        />
+                      )}
+                    </span>
+                  ),
+                  children: (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* 变更单筛选过滤卡片 */}
+                      <Card size="small">
+                        <Row gutter={[16, 16]} align="middle">
+                          <Col xs={24} md={8}>
+                            <Space>
+                              <Text>变更状态：</Text>
+                              <Select
+                                style={{ width: 240 }}
+                                value={changeFilterStatus}
+                                onChange={(val) => {
+                                  setChangeFilterStatus(val);
+                                  loadChangeList(selectedTaskId, val);
+                                }}
+                                options={[
+                                  { label: '全部状态', value: '' },
+                                  { label: '待教师初审 (PENDING_TEACHER)', value: 'PENDING_TEACHER' },
+                                  { label: '待院系终审 (PENDING_DEPT)', value: 'PENDING_DEPT' },
+                                  { label: '终审通过已生效 (APPROVED)', value: 'APPROVED' },
+                                  { label: '审核已驳回 (REJECTED)', value: 'REJECTED' }
+                                ]}
+                              />
+                            </Space>
+                          </Col>
+                          <Col xs={24} md={16} style={{ textAlign: 'right' }}>
+                            <Space>
+                              <Button
+                                type="primary"
+                                icon={<SearchOutlined />}
+                                onClick={() => loadChangeList(selectedTaskId, changeFilterStatus)}
+                              >
+                                查询变更
+                              </Button>
+                              <Button
+                                icon={<ReloadOutlined />}
+                                onClick={() => {
+                                  setChangeFilterStatus('');
+                                  loadChangeList(selectedTaskId, '');
+                                }}
+                              >
+                                重置
+                              </Button>
+                            </Space>
+                          </Col>
+                        </Row>
+                      </Card>
+
+                      {/* 变更单据表格 */}
+                      <Table
+                        columns={changeColumns}
+                        dataSource={changeList}
+                        rowKey="id"
+                        loading={changeLoading}
+                        pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 笔变更申请` }}
+                        scroll={{ x: 1200 }}
+                      />
+                    </div>
+                  )
+                }
+              ]}
             />
           </Card>
 
@@ -826,6 +1115,34 @@ export const ApplyPage: React.FC = () => {
           </Drawer>
         </>
       )}
+
+      {/* 实习重大变更申请模态框 (学生端) */}
+      <ApplyChangeModal
+        visible={changeModalVisible}
+        onCancel={() => setChangeModalVisible(false)}
+        onSuccess={() => {
+          setChangeModalVisible(false);
+          if (studentApply) {
+            loadActiveChange(studentApply.id);
+          }
+        }}
+        originalApply={studentApply}
+      />
+
+      {/* 实习重大变更审核/详情抽屉 (教师/院系管理端) */}
+      <ApplyChangeAuditDrawer
+        visible={changeAuditDrawerVisible}
+        onClose={() => setChangeAuditDrawerVisible(false)}
+        onSuccess={() => {
+          setChangeAuditDrawerVisible(false);
+          if (isStudent && studentApply) {
+            loadActiveChange(studentApply.id);
+          } else {
+            loadChangeList(selectedTaskId, changeFilterStatus);
+          }
+        }}
+        changeData={selectedChange}
+      />
     </div>
   );
 };

@@ -29,4 +29,6 @@ public class LoginVO extends BaseVO {
     private Long deptId;
     private String deptName;
     private List<String> permissions;
+    private Boolean mustChangePassword;
+    private Boolean forcePasswordChange;
 }

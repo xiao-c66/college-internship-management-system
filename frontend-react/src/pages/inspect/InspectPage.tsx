@@ -81,6 +81,8 @@ const getRectifyStatusTag = (status: string) => {
       return <Tag color="warning">待学生提交报告</Tag>;
     case 'PENDING_REVIEW':
       return <Tag color="processing">已提报·待导师复核</Tag>;
+    case 'PENDING_CLOSE':
+      return <Tag color="cyan">待院系销号</Tag>;
     case 'CLOSED':
       return <Tag color="success">已闭环销号</Tag>;
     case 'REJECTED':
@@ -546,7 +548,7 @@ export const InspectPage: React.FC = () => {
           )}
 
           {/* 院系终审销号闭环 */}
-          {(isDeptAdmin || isAdmin) && record.status === 'PENDING_REVIEW' && (
+          {(isDeptAdmin || isAdmin) && record.status === 'PENDING_CLOSE' && (
             <Popconfirm
               title="确认予以闭环销号吗？"
               description="销号后整改工单将完成归档，不可再撤回。"

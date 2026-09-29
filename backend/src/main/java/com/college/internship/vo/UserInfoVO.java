@@ -33,4 +33,5 @@ public class UserInfoVO extends BaseVO {
     private String className;
     private List<String> roles;
     private List<String> permissions;
+    private Boolean mustChangePassword;
 }

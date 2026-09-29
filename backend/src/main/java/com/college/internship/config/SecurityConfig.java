@@ -71,8 +71,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 1. 系统健康检查公开访问
                         .requestMatchers("/api/v1/health").permitAll()
-                        // 2. 认证接口公开访问 (验证码与登录)
-                        .requestMatchers("/api/v1/auth/captcha", "/api/v1/auth/login").permitAll()
+                        // 2. 认证接口与找回密码公开访问 (验证码与登录)
+                        .requestMatchers("/api/v1/auth/captcha", "/api/v1/auth/login", "/api/v1/users/forgot-password/**").permitAll()
                         // 3. Knife4j / OpenAPI 3 文档公开访问
                         .requestMatchers(
                                 "/doc.html",

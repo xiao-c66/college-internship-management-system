@@ -17,7 +17,9 @@ import {
   FileTextOutlined,
   InboxOutlined,
   NotificationOutlined,
-  DesktopOutlined
+  DesktopOutlined,
+  ToolOutlined,
+  TeamOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
@@ -143,6 +145,12 @@ export const MainLayout: React.FC = () => {
             label: '系统与协同管理',
             children: [
               {
+                key: '/admin/system/user',
+                icon: <TeamOutlined />,
+                label: '用户账号管理',
+                disabled: false
+              },
+              {
                 key: '/admin/system/notice',
                 icon: <NotificationOutlined />,
                 label: '教学通知公告',
@@ -161,7 +169,20 @@ export const MainLayout: React.FC = () => {
             ]
           }
         ]
-      : [])
+      : []),
+    {
+      key: 'group-tools',
+      type: 'group' as const,
+      label: '系统工具与安全',
+      children: [
+        {
+          key: '/dev-diag',
+          icon: <ToolOutlined />,
+          label: '开发与环境诊断',
+          disabled: false
+        }
+      ]
+    }
   ];
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {

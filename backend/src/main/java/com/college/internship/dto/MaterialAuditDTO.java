@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 
 @Data
 public class MaterialAuditDTO {
-    @NotNull(message = "考评分数不能为空")
     @DecimalMin(value = "0.00", message = "分数不能低于0")
     @DecimalMax(value = "100.00", message = "分数不能高于100")
     private BigDecimal auditScore;

@@ -1,0 +1,14 @@
+{
+  "name": "college-internship-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "高校实习全过程管理系统",
+  "scripts": {
+    "dev": "npm --prefix frontend-react run dev",
+    "dev:react": "npm --prefix frontend-react run dev",
+    "dev:vue": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend-react run build",
+    "build:react": "npm --prefix frontend-react run build",
+    "build:vue": "npm --prefix frontend run build"
+  }
+}

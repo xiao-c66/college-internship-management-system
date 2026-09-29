@@ -12,6 +12,7 @@ import com.college.internship.mapper.BaseDepartmentMapper;
 import com.college.internship.mapper.BaseMajorMapper;
 import com.college.internship.mapper.SysUserMapper;
 import com.college.internship.security.JwtTokenProvider;
+import com.college.internship.security.PasswordPolicyManager;
 import com.college.internship.service.IAuthService;
 import com.college.internship.service.ISysOperationLogService;
 import com.college.internship.vo.CaptchaVO;
@@ -45,6 +46,7 @@ public class AuthServiceImpl implements IAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final ISysOperationLogService operationLogService;
+    private final PasswordPolicyManager passwordPolicyManager;
 
     // 本地内存简易验证码存储 (Key -> Code,带时间戳)
     private static final Map<String, CaptchaStoreItem> CAPTCHA_CACHE = new ConcurrentHashMap<>();
@@ -107,12 +109,15 @@ public class AuthServiceImpl implements IAuthService {
             throw new BusinessException(400, "用户名或密码错误，请核对后重试");
         }
 
-        if (user.getStatus() != 1) {
+        if (user.getStatus() != null && user.getStatus() == 0) {
             operationLogService.logOperation("用户登录", "LOGIN", "login", "POST",
                     user.getId(), user.getUsername(), "/api/v1/auth/login", clientIp,
                     null, null, 0, "账号已停用");
             throw new BusinessException(400, "该用户账号已被停用，请联系管理员");
         }
+
+        boolean mustChangePassword = (user.getStatus() != null && user.getStatus() == 2);
+        boolean forcePasswordChangeForUser = passwordPolicyManager.isMandatoryForceChange(user.getUsername(), user.getStatus());
 
         // 3. BCrypt 密码匹配校验
         if (!passwordEncoder.matches(loginDTO.getPassword(), user.getPassword())) {
@@ -162,6 +167,8 @@ public class AuthServiceImpl implements IAuthService {
                 .deptId(user.getDeptId())
                 .deptName(deptName)
                 .permissions(roles)
+                .mustChangePassword(mustChangePassword)
+                .forcePasswordChange(forcePasswordChangeForUser)
                 .build();
     }
 
@@ -224,6 +231,7 @@ public class AuthServiceImpl implements IAuthService {
                 .className(className)
                 .roles(roles)
                 .permissions(roles)
+                .mustChangePassword(user.getStatus() != null && user.getStatus() == 2)
                 .build();
     }
 }

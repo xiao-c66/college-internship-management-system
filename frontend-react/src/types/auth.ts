@@ -12,6 +12,8 @@ export interface SysUser {
   email?: string;
   avatarUrl?: string;
   permissions?: string[];
+  mustChangePassword?: boolean;
+  forcePasswordChange?: boolean;
 }
 
 export interface LoginResult {
@@ -26,6 +28,8 @@ export interface LoginResult {
   deptId?: number;
   deptName?: string;
   permissions?: string[];
+  mustChangePassword?: boolean;
+  forcePasswordChange?: boolean;
 }
 
 export interface ApiResult<T = any> {

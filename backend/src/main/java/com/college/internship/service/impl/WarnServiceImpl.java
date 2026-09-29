@@ -162,7 +162,31 @@ public class WarnServiceImpl implements IWarnService {
             throw new BusinessException(403, "学生端禁止调用异常预警全盘扫描接口");
         }
 
-        // 2. 10秒防刷流控拦截 (TEST-P7-09)
+        // 2. 本次测试路径必须要求 taskId；若 taskId 为空，不得执行全局扫描 (防御性边界控制)
+        if (taskId == null) {
+            throw new BusinessException(400, "实习任务ID不能为空，禁止执行全局预警扫描");
+        }
+
+        InternshipTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BusinessException(400, "实习任务不存在");
+        }
+
+        // 3. 复用任务权限校验：确认调用者有权操作该 taskId
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            Long bindingCount = taskStudentMapper.selectCount(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId()));
+            if (bindingCount == 0) {
+                throw new BusinessException(403, "无权扫描非负责任务的学生预警");
+            }
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType())) {
+            if (task.getDeptId() != null && loginUser.getDeptId() != null && !task.getDeptId().equals(loginUser.getDeptId())) {
+                throw new BusinessException(403, "院系管理员无权跨院系执行预警扫描");
+            }
+        }
+
+        // 4. 10秒防刷流控拦截 (TEST-P7-09)
         long nowMs = System.currentTimeMillis();
         Long lastScan = USER_LAST_SCAN_TIME.get(loginUser.getUserId());
         int rateLimitSec = phase7Properties.getWarn().getScanRateLimitSeconds();
@@ -172,20 +196,11 @@ public class WarnServiceImpl implements IWarnService {
         }
         USER_LAST_SCAN_TIME.put(loginUser.getUserId(), nowMs);
 
-        // 3. 圈定扫描学生名单 (TEST-P7-09 教师只能扫描管辖学生)
-        LambdaQueryWrapper<InternshipTaskStudent> wrapper = new LambdaQueryWrapper<InternshipTaskStudent>();
-        if (taskId != null) {
-            wrapper.eq(InternshipTaskStudent::getTaskId, taskId);
-        }
+        // 5. 圈定扫描学生名单 (严格限定在当前 taskId 内)
+        LambdaQueryWrapper<InternshipTaskStudent> wrapper = new LambdaQueryWrapper<InternshipTaskStudent>()
+                .eq(InternshipTaskStudent::getTaskId, taskId);
         if ("TEACHER".equals(loginUser.getUserType())) {
             wrapper.eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId());
-        } else if ("DEPT_ADMIN".equals(loginUser.getUserType()) && loginUser.getDeptId() != null) {
-            // 院系学生圈定
-            List<InternshipTask> deptTasks = taskMapper.selectList(new LambdaQueryWrapper<InternshipTask>()
-                    .eq(InternshipTask::getDeptId, loginUser.getDeptId()));
-            if (!deptTasks.isEmpty()) {
-                wrapper.in(InternshipTaskStudent::getTaskId, deptTasks.stream().map(InternshipTask::getId).collect(Collectors.toList()));
-            }
         }
 
         List<InternshipTaskStudent> studentList = taskStudentMapper.selectList(wrapper);
@@ -201,8 +216,7 @@ public class WarnServiceImpl implements IWarnService {
             Long curTaskId = student.getTaskId();
             Long curStudentId = student.getStudentId();
             Long curTeacherId = student.getTeacherId();
-            InternshipTask task = taskMapper.selectById(curTaskId);
-            Long curDeptId = task != null ? task.getDeptId() : 1L;
+            Long curDeptId = task.getDeptId() != null ? task.getDeptId() : 1L;
 
             for (WarnRuleConfig rule : enabledRules) {
                 boolean hit = checkAnomaly(rule, curTaskId, curStudentId);
@@ -262,11 +276,18 @@ public class WarnServiceImpl implements IWarnService {
             }
         }
 
-        // 4. 超时自动升级至院系巡检 (TEST-P7-13)
-        List<WarnTicket> openTickets = ticketMapper.selectList(new LambdaQueryWrapper<WarnTicket>()
+        // 6. 超时自动升级至院系巡检 (严格限定在当前 taskId 内) (TEST-P7-13)
+        LambdaQueryWrapper<WarnTicket> upgradeWrapper = new LambdaQueryWrapper<WarnTicket>()
+                .eq(WarnTicket::getTaskId, taskId)
                 .eq(WarnTicket::getIsUpgraded, 0)
                 .in(WarnTicket::getStatus, List.of("TRIGGERED", "DISPATCHED", "PROCESSING"))
-                .eq(BasePhase7Entity::getIsDeleted, 0));
+                .eq(BasePhase7Entity::getIsDeleted, 0);
+
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            upgradeWrapper.eq(WarnTicket::getTeacherId, loginUser.getUserId());
+        }
+
+        List<WarnTicket> openTickets = ticketMapper.selectList(upgradeWrapper);
 
         LocalDateTime now = LocalDateTime.now();
         int timeoutDays = phase7Properties.getWarn().getHandlingTimeoutDays();

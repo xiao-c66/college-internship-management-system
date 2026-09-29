@@ -120,7 +120,7 @@ export interface RectifyVO {
   closeDeptUserId?: number;
   closeDeptUserName?: string;
   closeTime?: string;
-  status: 'PENDING_SUBMIT' | 'PENDING_REVIEW' | 'CLOSED' | 'REJECTED';
+  status: 'PENDING_SUBMIT' | 'PENDING_REVIEW' | 'PENDING_CLOSE' | 'CLOSED' | 'REJECTED';
   createTime?: string;
 }
 
