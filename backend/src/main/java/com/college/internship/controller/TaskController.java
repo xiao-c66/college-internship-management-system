@@ -61,8 +61,23 @@ public class TaskController {
         return Result.success("实习任务已正式发布", null);
     }
 
+    
+    @PostMapping("/{id}/lifecycle")
+    public Result<Void> changeLifecycle(@PathVariable("id") Long id, @Valid @RequestBody com.college.internship.dto.LifecycleDTO dto, @AuthenticationPrincipal LoginUser loginUser) {
+        taskService.changeLifecycle(id, dto, loginUser);
+        return Result.success("状态已更新", null);
+    }
+
+    @PostMapping("/{id}/students/adjust")
+    public Result<Void> adjustStudents(@PathVariable("id") Long id, @Valid @RequestBody com.college.internship.dto.StudentAdjustDTO dto, @AuthenticationPrincipal LoginUser loginUser) {
+        taskService.adjustStudents(id, dto, loginUser);
+        return Result.success("名单已调整", null);
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "删除未发布任务", description = "仅允许删除未产生业务数据的草稿任务 (TASK-011)")
+    
+    
     public Result<Void> deleteTask(@PathVariable("id") Long id,
                                    @AuthenticationPrincipal LoginUser loginUser) {
         taskService.deleteTask(id, loginUser);

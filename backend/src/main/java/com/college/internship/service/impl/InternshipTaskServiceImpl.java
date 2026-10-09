@@ -48,6 +48,10 @@ import java.util.List;
 public class InternshipTaskServiceImpl implements IInternshipTaskService {
 
     private final InternshipTaskMapper internshipTaskMapper;
+    private final com.college.internship.mapper.TaskLifecycleLogMapper lifecycleLogMapper;
+    private final com.college.internship.mapper.TaskStudentAuditLogMapper studentAuditLogMapper;
+    private final com.college.internship.mapper.InternshipApplyMapper applyMapper;
+    private final com.college.internship.mapper.InternshipWeeklyReportMapper weeklyMapper;
     private final InternshipTaskMajorMapper taskMajorMapper;
     private final InternshipTaskClassMapper taskClassMapper;
     private final InternshipTaskStudentMapper taskStudentMapper;
@@ -56,6 +60,11 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
     private final BaseClassMapper classMapper;
     private final SysUserMapper userMapper;
     private final SysOperationLogMapper operationLogMapper;
+    private final com.college.internship.mapper.StudentMaterialItemMapper materialItemMapper;
+    private final com.college.internship.mapper.ScoreSummaryMapper scoreSummaryMapper;
+    private final com.college.internship.mapper.WarnTicketMapper warnTicketMapper;
+    private final com.college.internship.mapper.InternshipArchiveMapper archiveMapper;
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -94,6 +103,8 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
                 .academicYear(dto.getAcademicYear())
                 .semester(dto.getSemester())
                 .internshipMode(dto.getInternshipMode())
+                .assignMode(dto.getAssignMode() != null ? dto.getAssignMode() : "ORG")
+                .assignMode(dto.getAssignMode() != null ? dto.getAssignMode() : "ORG")
                 .startDate(dto.getStartDate())
                 .endDate(dto.getEndDate())
                 .weightEnterprise(dto.getWeightEnterprise())
@@ -112,7 +123,10 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
         internshipTaskMapper.insert(task);
 
         // 绑定专业与班级
-        bindMajorsAndClasses(task.getId(), dto.getMajorIds(), dto.getClassIds());
+        if ("DRAFT".equals(task.getStatus())) {
+            bindMajorsAndClasses(task.getId(), dto.getMajorIds(), dto.getClassIds());
+            if ("STUDENT".equals(task.getAssignMode())) bindStudents(task.getId(), dto.getStudentIds(), task.getDeptId());
+        }
 
         return getTaskDetail(task.getId(), loginUser);
     }
@@ -136,6 +150,9 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
         task.setAcademicYear(dto.getAcademicYear());
         task.setSemester(dto.getSemester());
         task.setInternshipMode(dto.getInternshipMode());
+        if ("DRAFT".equals(task.getStatus()) && dto.getAssignMode() != null) {
+            task.setAssignMode(dto.getAssignMode());
+        }
         task.setStartDate(dto.getStartDate());
         task.setEndDate(dto.getEndDate());
         task.setWeightEnterprise(dto.getWeightEnterprise());
@@ -184,6 +201,24 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
             }
         }
 
+        if ("STUDENT".equals(task.getAssignMode()) && "DRAFT".equals(task.getStatus()) && dto.getStudentIds() != null) {
+            List<InternshipTaskStudent> existingStudents = taskStudentMapper.selectList(
+                    new LambdaQueryWrapper<InternshipTaskStudent>().eq(InternshipTaskStudent::getTaskId, id));
+            List<Long> existingStudentIds = existingStudents.stream().map(InternshipTaskStudent::getStudentId).toList();
+            for (InternshipTaskStudent es : existingStudents) {
+                if (!dto.getStudentIds().contains(es.getStudentId())) {
+                    taskStudentMapper.deleteById(es.getId());
+                }
+            }
+            List<Long> toAdd = new java.util.ArrayList<>();
+            for (Long sId : dto.getStudentIds()) {
+                if (!existingStudentIds.contains(sId)) {
+                    toAdd.add(sId);
+                }
+            }
+            bindStudents(id, toAdd, task.getDeptId());
+        }
+
         return getTaskDetail(id, loginUser);
     }
 
@@ -204,36 +239,40 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
         task.setStatus("PUBLISHED");
         internshipTaskMapper.updateById(task);
 
-        // 自动圈定学生名单：根据关联班级查询学生并导入 internship_task_student
-        List<InternshipTaskClass> classLinks = taskClassMapper.selectList(
-                new LambdaQueryWrapper<InternshipTaskClass>().eq(InternshipTaskClass::getTaskId, id));
+        
+        if (!"STUDENT".equals(task.getAssignMode())) {
+            // 自动圈定学生名单：根据关联班级查询学生并导入 internship_task_student
+            List<InternshipTaskClass> classLinks = taskClassMapper.selectList(
+                    new LambdaQueryWrapper<InternshipTaskClass>().eq(InternshipTaskClass::getTaskId, id));
 
-        for (InternshipTaskClass cl : classLinks) {
-            List<SysUser> students = userMapper.selectList(new LambdaQueryWrapper<SysUser>()
-                    .eq(SysUser::getClassId, cl.getClassId())
-                    .eq(SysUser::getUserType, "STUDENT")
-                    .eq(SysUser::getIsDeleted, 0));
+            for (InternshipTaskClass cl : classLinks) {
+                List<SysUser> students = userMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getClassId, cl.getClassId())
+                        .eq(SysUser::getUserType, "STUDENT")
+                        .eq(SysUser::getIsDeleted, 0));
 
-            for (SysUser s : students) {
-                Long exists = taskStudentMapper.selectCount(new LambdaQueryWrapper<InternshipTaskStudent>()
-                        .eq(InternshipTaskStudent::getTaskId, id)
-                        .eq(InternshipTaskStudent::getStudentId, s.getId()));
-                if (exists == null || exists == 0) {
-                    InternshipTaskStudent ts = InternshipTaskStudent.builder()
-                            .taskId(id)
-                            .studentId(s.getId())
-                            .studentNumber(s.getUserNumber())
-                            .studentName(s.getRealName())
-                            .classId(s.getClassId())
-                            .readMaterialIds("[]")
-                            .readMaterialCount(0)
-                            .safetyStatus("NOT_STARTED")
-                            .isDeleted(0)
-                            .build();
-                    taskStudentMapper.insert(ts);
+                for (SysUser s : students) {
+                    Long exists = taskStudentMapper.selectCount(new LambdaQueryWrapper<InternshipTaskStudent>()
+                            .eq(InternshipTaskStudent::getTaskId, id)
+                            .eq(InternshipTaskStudent::getStudentId, s.getId()));
+                    if (exists == null || exists == 0) {
+                        InternshipTaskStudent ts = InternshipTaskStudent.builder()
+                                .taskId(id)
+                                .studentId(s.getId())
+                                .studentNumber(s.getUserNumber())
+                                .studentName(s.getRealName())
+                                .classId(s.getClassId())
+                                .readMaterialIds("[]")
+                                .readMaterialCount(0)
+                                .safetyStatus("NOT_STARTED")
+                                .isDeleted(0)
+                                .build();
+                        taskStudentMapper.insert(ts);
+                    }
                 }
             }
         }
+
         log.info("实习任务 [{}] 成功正式发布并完成学生名单圈定", id);
     }
 
@@ -248,9 +287,20 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
         }
         checkDeptScope(task.getDeptId(), loginUser);
 
+        
         if (!"DRAFT".equals(task.getStatus())) {
             throw new BusinessException(400, "仅允许删除未正式发布的草稿任务 (TASK-011)");
         }
+        
+        // 校验业务数据
+        Long applyCount = applyMapper.selectCount(new LambdaQueryWrapper<com.college.internship.entity.InternshipApply>().eq(com.college.internship.entity.InternshipApply::getTaskId, id));
+        Long weeklyCount = weeklyMapper.selectCount(new LambdaQueryWrapper<com.college.internship.entity.InternshipWeeklyReport>().eq(com.college.internship.entity.InternshipWeeklyReport::getTaskId, id));
+        if ((applyCount != null && applyCount > 0) || (weeklyCount != null && weeklyCount > 0)) {
+            throw new BusinessException(400, "该任务已产生申请或周报业务数据，禁止删除");
+        }
+        
+        taskStudentMapper.delete(new LambdaQueryWrapper<InternshipTaskStudent>().eq(InternshipTaskStudent::getTaskId, id));
+
 
         internshipTaskMapper.deleteById(id);
     }
@@ -314,6 +364,11 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
         Long studentCount = taskStudentMapper.selectCount(
                 new LambdaQueryWrapper<InternshipTaskStudent>().eq(InternshipTaskStudent::getTaskId, id));
 
+        // 查询并返回关联的学生ID (is_deleted=0)
+        List<InternshipTaskStudent> studentLinks = taskStudentMapper.selectList(
+                new LambdaQueryWrapper<InternshipTaskStudent>().eq(InternshipTaskStudent::getTaskId, id).eq(InternshipTaskStudent::getIsDeleted, 0));
+        List<Long> studentIds = studentLinks.stream().map(InternshipTaskStudent::getStudentId).toList();
+
         return TaskVO.builder()
                 .id(task.getId())
                 .taskCode(task.getTaskCode())
@@ -337,6 +392,8 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
                 .safetyMaxAttempts(task.getSafetyMaxAttempts())
                 .status(task.getStatus())
                 .createTime(task.getCreateTime())
+                .assignMode(task.getAssignMode())
+                .studentIds(studentIds)
                 .majorIds(majorIds)
                 .majorNames(majorNames)
                 .classIds(classIds)
@@ -405,6 +462,53 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
             throw new BusinessException(400, "五项评价成绩权重之和必须严格等于100.00%，当前合计为: " + sum + "% (TASK-009)");
         }
     }
+
+    private void bindStudents(Long taskId, java.util.List<Long> studentIds, Long taskDeptId) {
+        if (studentIds != null && !studentIds.isEmpty()) {
+            java.util.Set<Long> uniqueIds = new java.util.HashSet<>();
+            for (Long sId : studentIds) {
+                if (!uniqueIds.add(sId)) {
+                    throw new com.college.internship.common.BusinessException(400, "禁止重复选择学生ID: " + sId);
+                }
+                com.college.internship.entity.SysUser u = userMapper.selectById(sId);
+                if (u == null || u.getIsDeleted() == 1 || !"STUDENT".equals(u.getUserType())) {
+                    throw new com.college.internship.common.BusinessException(400, "学生ID [" + sId + "] 不存在或非学生角色");
+                }
+                if (!u.getDeptId().equals(taskDeptId)) {
+                    throw new com.college.internship.common.BusinessException(400, "跨院系学生违规，学生所属院系与任务院系不一致");
+                }
+                
+                Long exists = taskStudentMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.InternshipTaskStudent>()
+                        .eq(com.college.internship.entity.InternshipTaskStudent::getTaskId, taskId)
+                        .eq(com.college.internship.entity.InternshipTaskStudent::getStudentId, sId));
+                if (exists != null && exists > 0) {
+                     throw new com.college.internship.common.BusinessException(400, "该学生已被重复分配: " + u.getRealName());
+                }
+
+                com.college.internship.entity.InternshipTaskStudent ts = com.college.internship.entity.InternshipTaskStudent.builder()
+                        .taskId(taskId).studentId(sId)
+                        .studentNumber(u.getUserNumber())
+                        .studentName(u.getRealName())
+                        .classId(u.getClassId())
+                        .readMaterialIds("[]")
+                        .readMaterialCount(0)
+                        .safetyStatus("NOT_STARTED")
+                        .isDeleted(0).build();
+                try {
+                    taskStudentMapper.insert(ts);
+                } catch (org.springframework.dao.DuplicateKeyException e) {
+                    if (e.getMessage() != null && e.getMessage().contains("uk_task_student")) {
+                        int rows = taskStudentMapper.restoreDeletedStudent(ts);
+                        if (rows != 1) {
+                            throw new com.college.internship.common.BusinessException(500, "恢复历史学生名单失败(影响行数不为1)，疑为数据异常: " + e.getMessage());
+                        }
+                    } else {
+                        throw new com.college.internship.common.BusinessException(500, "绑定学生遭遇未知唯一键冲突: " + e.getMessage());
+                    }
+                }
+            }
+        }
+        }
 
     private void bindMajorsAndClasses(Long taskId, List<Long> majorIds, List<Long> classIds) {
         if (majorIds != null) {
@@ -610,5 +714,147 @@ public class InternshipTaskServiceImpl implements IInternshipTaskService {
 
         log.info("用户 [{}] 成功为任务 [{}] 分配指导教师 [{}] (关联学生数: {})",
                 loginUser.getRealName(), taskId, teacher.getRealName(), updatedCount);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void changeLifecycle(Long taskId, com.college.internship.dto.LifecycleDTO dto, LoginUser loginUser) {
+        checkTaskManagePermission(loginUser);
+        InternshipTask task = internshipTaskMapper.selectById(taskId);
+        if (task == null || task.getIsDeleted() == 1) {
+            throw new BusinessException(404, "实习任务不存在");
+        }
+        checkDeptScope(task.getDeptId(), loginUser);
+        if ("DRAFT".equals(task.getStatus())) {
+            throw new BusinessException(400, "草稿状态请使用删除");
+        }
+        
+        
+        String action = dto.getAction();
+        if (!java.util.List.of("REVOKE", "DISABLE", "ARCHIVE").contains(action)) {
+            throw new BusinessException(400, "不支持的操作");
+        }
+        String pre = task.getStatus();
+        if ("ARCHIVED".equals(pre)) {
+            throw new BusinessException(400, "任务已处于终态，禁止继续变更生命周期");
+        }
+        if (!"ARCHIVE".equals(action)) {
+            if ("DISABLED".equals(pre) || "REVOKED".equals(pre)) {
+                throw new BusinessException(400, "任务已处于终态，禁止继续变更生命周期");
+            }
+        }
+        if (dto.getReason() == null || dto.getReason().trim().isEmpty()) {
+            throw new BusinessException(400, "变更原因不能为空");
+        }
+        if ("DISABLE".equals(action)) {
+             task.setStatus("DISABLED");
+        } else if ("REVOKE".equals(action)) {
+             task.setStatus("REVOKED");
+        } else if ("ARCHIVE".equals(action)) {
+             if (!"ENDED".equals(pre) && !"DISABLED".equals(pre) && !"REVOKED".equals(pre)) {
+                 throw new BusinessException(400, "仅结束或停用、撤销的任务可以归档");
+             }
+             task.setStatus("ARCHIVED");
+        }
+        
+        internshipTaskMapper.updateById(task);
+        com.college.internship.entity.TaskLifecycleLog log = com.college.internship.entity.TaskLifecycleLog.builder()
+            .taskId(taskId).action(action).reason(dto.getReason())
+            .preStatus(pre).postStatus(task.getStatus())
+            .operatorId(loginUser.getUserId()).operatorName(loginUser.getRealName())
+            .build();
+        lifecycleLogMapper.insert(log);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adjustStudents(Long taskId, com.college.internship.dto.StudentAdjustDTO dto, LoginUser loginUser) {
+        checkTaskManagePermission(loginUser);
+        InternshipTask task = internshipTaskMapper.selectById(taskId);
+        if (task == null || task.getIsDeleted() == 1) throw new BusinessException(404, "实习任务不存在");
+        checkDeptScope(task.getDeptId(), loginUser);
+        if ("ORG".equals(task.getAssignMode())) {
+            throw new BusinessException(400, "院系统筹模式下禁止微调学生");
+        }
+        String stat = task.getStatus();
+        if ("DRAFT".equals(stat) || "DISABLED".equals(stat) || "REVOKED".equals(stat) || "ARCHIVED".equals(stat)) {
+            throw new BusinessException(400, "当前任务状态不允许调整名单");
+        }
+        
+        String action = dto.getAction();
+        if (!"ADD".equals(action) && !"REMOVE".equals(action)) {
+             throw new BusinessException(400, "非法操作类型");
+        }
+        if (dto.getReason() == null || dto.getReason().trim().isEmpty()) {
+             throw new BusinessException(400, "操作原因不能为空");
+        }
+        for (Long sId : dto.getStudentIds()) {
+            if ("ADD".equals(action)) {
+                SysUser s = userMapper.selectById(sId);
+                if (s == null || s.getIsDeleted() == 1 || !"STUDENT".equals(s.getUserType())) {
+                    throw new BusinessException(400, "学生ID [" + sId + "] 不存在或非学生角色");
+                }
+                if (!s.getDeptId().equals(task.getDeptId())) {
+                    throw new BusinessException(400, "禁止跨院系添加学生");
+                }
+                Long exists = taskStudentMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<InternshipTaskStudent>()
+                        .eq(InternshipTaskStudent::getTaskId, taskId)
+                        .eq(InternshipTaskStudent::getStudentId, sId));
+                if (exists != null && exists > 0) {
+                     throw new BusinessException(400, "该学生已在名单中，不可重复添加");
+                }
+                InternshipTaskStudent ts = InternshipTaskStudent.builder()
+                        .taskId(taskId).studentId(s.getId()).studentNumber(s.getUserNumber())
+                        .studentName(s.getRealName()).classId(s.getClassId()).readMaterialIds("[]")
+                        .readMaterialCount(0).safetyStatus("NOT_STARTED").isDeleted(0).build();
+                taskStudentMapper.insert(ts);
+            } else if ("REMOVE".equals(action)) {
+                Long exists = taskStudentMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<InternshipTaskStudent>()
+                        .eq(InternshipTaskStudent::getTaskId, taskId)
+                        .eq(InternshipTaskStudent::getStudentId, sId));
+                if (exists == null || exists == 0) {
+                     throw new BusinessException(400, "该学生不在名单中");
+                }
+                // Check business data... apply, weekly, material, score, warn, archive
+                Long applyCount = applyMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.InternshipApply>()
+                    .eq(com.college.internship.entity.InternshipApply::getTaskId, taskId)
+                    .eq(com.college.internship.entity.InternshipApply::getStudentId, sId));
+                if (applyCount != null && applyCount > 0) throw new BusinessException(400, "该学生已有申请数据，禁止移除");
+                
+                Long weeklyCount = weeklyMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.InternshipWeeklyReport>()
+                    .eq(com.college.internship.entity.InternshipWeeklyReport::getTaskId, taskId)
+                    .eq(com.college.internship.entity.InternshipWeeklyReport::getStudentId, sId));
+                if (weeklyCount != null && weeklyCount > 0) throw new BusinessException(400, "该学生已有周报数据，禁止移除");
+
+                Long materialCount = materialItemMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.StudentMaterialItem>()
+                    .eq(com.college.internship.entity.StudentMaterialItem::getTaskId, taskId)
+                    .eq(com.college.internship.entity.StudentMaterialItem::getStudentId, sId));
+                if (materialCount != null && materialCount > 0) throw new BusinessException(400, "该学生已有材料数据，禁止移除");
+
+                Long scoreCount = scoreSummaryMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.ScoreSummary>()
+                    .eq(com.college.internship.entity.ScoreSummary::getTaskId, taskId)
+                    .eq(com.college.internship.entity.ScoreSummary::getStudentId, sId));
+                if (scoreCount != null && scoreCount > 0) throw new BusinessException(400, "该学生已有成绩汇总数据，禁止移除");
+
+                Long warnCount = warnTicketMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.WarnTicket>()
+                    .eq(com.college.internship.entity.WarnTicket::getTaskId, taskId)
+                    .eq(com.college.internship.entity.WarnTicket::getStudentId, sId));
+                if (warnCount != null && warnCount > 0) throw new BusinessException(400, "该学生已有预警数据，禁止移除");
+
+                Long archiveCount = archiveMapper.selectCount(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.InternshipArchive>()
+                    .eq(com.college.internship.entity.InternshipArchive::getTaskId, taskId)
+                    .eq(com.college.internship.entity.InternshipArchive::getStudentId, sId));
+                if (archiveCount != null && archiveCount > 0) throw new BusinessException(400, "该学生已有档案数据，禁止移除");
+
+                taskStudentMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getStudentId, sId));
+
+            }
+            com.college.internship.entity.TaskStudentAuditLog audit = com.college.internship.entity.TaskStudentAuditLog.builder()
+                .taskId(taskId).studentId(sId).action(action).reason(dto.getReason())
+                .operatorId(loginUser.getUserId()).operatorName(loginUser.getRealName()).build();
+            studentAuditLogMapper.insert(audit);
+        }
     }
 }

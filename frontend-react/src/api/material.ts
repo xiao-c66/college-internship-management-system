@@ -23,6 +23,7 @@ export interface MaterialItemVO {
   attachmentUrl?: string;
   fileName?: string;
   fileSize?: number;
+  fileHash?: string;
   version: number;
   status: 'UNSUBMITTED' | 'SUBMITTED' | 'APPROVED' | 'RETURNED';
   submitTime?: string;
@@ -41,6 +42,8 @@ export interface MaterialVersionVO {
   contentText?: string;
   attachmentUrl?: string;
   fileName?: string;
+  fileSize?: number;
+  fileHash?: string;
   submitTime?: string;
   auditTeacherId?: number;
   auditTeacherName?: string;
@@ -58,6 +61,7 @@ export interface MaterialSubmitDTO {
   attachmentUrl?: string;
   fileName?: string;
   fileSize?: number;
+  fileHash?: string;
 }
 
 export interface MaterialAuditDTO {
@@ -92,4 +96,31 @@ export function auditMaterial(id: number, data: MaterialAuditDTO) {
 
 export function getMaterialVersions(id: number) {
   return request.get<any, ApiResult<MaterialVersionVO[]>>(`/internship/materials/${id}/versions`);
+}
+
+export function uploadMaterialFile(file: File, taskId: number, materialCode?: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('taskId', String(taskId));
+  if (materialCode) {
+    formData.append('materialCode', materialCode);
+  }
+  return request.post<any, ApiResult<{
+    fileName: string;
+    fileSize: number;
+    fileHash: string;
+    attachmentUrl: string;
+  }>>('/internship/materials/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+}
+
+export function getMaterialDownloadUrl(id: number) {
+  return `/api/v1/internship/materials/${id}/download`;
+}
+
+export function getMaterialVersionDownloadUrl(versionId: number) {
+  return `/api/v1/internship/materials/versions/${versionId}/download`;
 }

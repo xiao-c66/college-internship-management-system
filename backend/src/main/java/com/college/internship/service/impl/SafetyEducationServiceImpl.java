@@ -46,9 +46,11 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 安全教育准入与考试核心业务实现类
@@ -295,10 +297,14 @@ public class SafetyEducationServiceImpl implements ISafetyEducationService {
         // 客观题系统自动逐题核对与判分
         BigDecimal totalScore = BigDecimal.ZERO;
         List<SafetyExamAnswerDetail> details = new ArrayList<>();
+        Set<Long> seenQuestionIds = new HashSet<>();
 
         for (ExamSubmitDTO.AnswerItem item : dto.getAnswers()) {
             if (item.getQuestionId() == null) {
                 throw new BusinessException(400, "交卷失败：存在无效的试题ID");
+            }
+            if (!seenQuestionIds.add(item.getQuestionId())) {
+                throw new BusinessException(400, "交卷失败：试卷包含重复作答试题 [" + item.getQuestionId() + "]");
             }
             SafetyTestQuestion question = questionMapper.selectById(item.getQuestionId());
             if (question == null || question.getIsDeleted() == 1 || question.getStatus() != 1) {
@@ -352,9 +358,13 @@ public class SafetyEducationServiceImpl implements ISafetyEducationService {
         updateTaskStudentSafetyStatus(ts, dto.getTaskId(), studentId, total);
         taskStudentMapper.updateById(ts);
 
+        int remainingAttempts = Math.max(0, maxAttempts - currentAttempt);
+
         return ExamResultVO.builder()
                 .attemptId(attempt.getId())
                 .attemptNo(currentAttempt)
+                .maxAttempts(maxAttempts)
+                .remainingAttempts(remainingAttempts)
                 .totalScore(totalScore)
                 .passingScore(passingScore)
                 .isPassed(isPassed ? 1 : 0)
@@ -381,6 +391,16 @@ public class SafetyEducationServiceImpl implements ISafetyEducationService {
                 .eq(InternshipTaskStudent::getIsDeleted, 0));
         if (ts == null) {
             throw new BusinessException(403, "您未圈定在当前实习任务学生名单中，无权签署安全责任承诺书 (TASK-003)");
+        }
+
+        // 核心规则：未通过安全测试禁止签署安全责任承诺书 (SAFE-007)
+        Long passedCount = examAttemptMapper.selectCount(new LambdaQueryWrapper<SafetyExamAttempt>()
+                .eq(SafetyExamAttempt::getTaskId, dto.getTaskId())
+                .eq(SafetyExamAttempt::getStudentId, studentId)
+                .eq(SafetyExamAttempt::getIsPassed, 1)
+                .eq(SafetyExamAttempt::getIsDeleted, 0));
+        if (passedCount == null || passedCount == 0) {
+            throw new BusinessException(400, "尚未通过安全教育准入考试，禁止签署安全责任承诺书 (SAFE-007)");
         }
 
         SafetyCommitmentSign existing = commitmentSignMapper.selectOne(new LambdaQueryWrapper<SafetyCommitmentSign>()
@@ -947,7 +967,7 @@ public class SafetyEducationServiceImpl implements ISafetyEducationService {
 
         int readCount = (ts.getReadMaterialCount() != null) ? ts.getReadMaterialCount() : 0;
 
-        if (passedAttempt != null && sign != null) {
+        if (passedAttempt != null && sign != null && (totalMaterials == 0 || readCount >= totalMaterials)) {
             ts.setSafetyStatus("COMPLETED");
         } else if (passedAttempt != null) {
             ts.setSafetyStatus("PASSED");

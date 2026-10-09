@@ -25,6 +25,8 @@ public interface IScoreService {
 
     void publishScores(Long taskId, LoginUser loginUser);
 
+    void publishScore(Long id, LoginUser loginUser);
+
     Long submitAppeal(ScoreAppealDTO dto, LoginUser loginUser);
 
     void arbitrateAppeal(Long id, ScoreArbitrateDTO dto, LoginUser loginUser);

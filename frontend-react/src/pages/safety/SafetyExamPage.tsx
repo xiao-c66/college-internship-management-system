@@ -47,12 +47,14 @@ export const SafetyExamPage: React.FC = () => {
   const [answers, setAnswers] = useState<Record<number, string | string[]>>({});
   const [examResult, setExamResult] = useState<ExamResultVO | null>(null);
   const [safetyStatus, setSafetyStatus] = useState<SafetyStatusVO | null>(null);
+  const [paperError, setPaperError] = useState<string | null>(null);
   const isPassed = Boolean(safetyStatus?.isPassed);
 
   const loadPaper = async () => {
     setLoading(true);
     setExamResult(null);
     setAnswers({});
+    setPaperError(null);
     try {
       const [paperRes, statusRes] = await Promise.all([
         getExamPaper(taskId),
@@ -64,8 +66,11 @@ export const SafetyExamPage: React.FC = () => {
       if (statusRes.code === 200 && statusRes.data) {
         setSafetyStatus(statusRes.data);
       }
-    } catch {}
-    finally {
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '获取安全考核试卷失败';
+      setPaperError(errMsg);
+      message.error(errMsg);
+    } finally {
       setLoading(false);
     }
   };
@@ -175,8 +180,24 @@ export const SafetyExamPage: React.FC = () => {
         </Space>
       </Card>
 
-      {/* 考核结果反馈 */}
-      {examResult ? (
+      {/* 考核结果反馈或准考前置阻断 */}
+      {paperError ? (
+        <Card style={{ textAlign: 'center', padding: '30px 20px' }}>
+          <Result
+            status="warning"
+            title="暂不具备安全考核准入资格"
+            subTitle={paperError}
+            extra={[
+              <Button type="primary" size="large" key="back" onClick={() => navigate('/safety')}>
+                返回规约学习（阅读全部必修规约）
+              </Button>,
+              <Button size="large" key="retry" icon={<ReloadOutlined />} onClick={loadPaper}>
+                重试获取试卷
+              </Button>
+            ]}
+          />
+        </Card>
+      ) : examResult ? (
         <Card>
           <Result
             status={examResult.isPassed ? 'success' : 'warning'}

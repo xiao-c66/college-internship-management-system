@@ -800,53 +800,14 @@ public class UserServiceImpl implements IUserService {
     }
 
     public static void validatePasswordStrength(String password) {
-        if (!StringUtils.hasText(password) || password.length() < 8) {
-            throw new BusinessException(400, "密码长度不能少于8位");
-        }
-        boolean hasUpper = false;
-        boolean hasLower = false;
-        boolean hasDigit = false;
-        boolean hasSpecial = false;
-        for (char c : password.toCharArray()) {
-            if (Character.isUpperCase(c)) {
-                hasUpper = true;
-            } else if (Character.isLowerCase(c)) {
-                hasLower = true;
-            } else if (Character.isDigit(c)) {
-                hasDigit = true;
-            } else {
-                hasSpecial = true;
-            }
-        }
-        if (!hasUpper) {
-            throw new BusinessException(400, "密码必须包含至少一个大写英文字母");
-        }
-        if (!hasLower) {
-            throw new BusinessException(400, "密码必须包含至少一个小写英文字母");
-        }
-        if (!hasDigit) {
-            throw new BusinessException(400, "密码必须包含至少一个数字");
-        }
-        if (!hasSpecial) {
-            throw new BusinessException(400, "密码必须包含至少一个特殊字符(如 !@#$%^&* 等)");
+        if (!StringUtils.hasText(password) || password.length() < 6) {
+            throw new BusinessException(400, "密码长度不能少于6位");
         }
     }
 
     private String generateSecureTempPassword() {
-        StringBuilder sb = new StringBuilder(10);
-        sb.append("ABCDEFGHJKLMNPQRSTUVWXYZ".charAt(RANDOM.nextInt(24)));
-        sb.append("abcdefghijkmnpqrstuvwxyz".charAt(randomInt(24)));
-        sb.append("23456789".charAt(randomInt(8)));
-        sb.append("!@#$%".charAt(randomInt(5)));
-        for (int i = 4; i < 10; i++) {
-            sb.append(TEMP_CHARS.charAt(randomInt(TEMP_CHARS.length())));
-        }
-        List<Character> list = new ArrayList<>();
-        for (char c : sb.toString().toCharArray()) list.add(c);
-        Collections.shuffle(list, RANDOM);
-        StringBuilder res = new StringBuilder();
-        for (char c : list) res.append(c);
-        return res.toString();
+        // According to the user's new rule, the initial password for all students and teachers should be 123456.
+        return "123456";
     }
 
     private int randomInt(int bound) {

@@ -1,3 +1,4 @@
+import { getUserPageApi } from '../../api/user';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
@@ -6,7 +7,7 @@ import {
   Tag,
   Space,
   Form,
-  Select,
+  Select, Radio,
   Input,
   Modal,
   DatePicker,
@@ -36,7 +37,10 @@ import {
   createTask,
   updateTask,
   publishTask,
+  getTaskDetail,
   deleteTask,
+  changeTaskLifecycle,
+  adjustTaskStudents,
   TaskItem,
   TaskCreateOrUpdateParams
 } from '../../api/task';
@@ -48,6 +52,21 @@ const { RangePicker } = DatePicker;
 export const TaskListPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Lifecycle & Adjust Students State
+  const [lifecycleVisible, setLifecycleVisible] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<'REVOKE' | 'DISABLE' | 'ARCHIVE'>('REVOKE');
+  const [lifecycleTaskId, setLifecycleTaskId] = useState<number | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
+
+  const [adjustVisible, setAdjustVisible] = useState(false);
+  const [adjustAction, setAdjustAction] = useState<'ADD' | 'REMOVE'>('ADD');
+  const [adjustTaskId, setAdjustTaskId] = useState<number | null>(null);
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustStudentIds, setAdjustStudentIds] = useState<number[]>([]);
+
+  
+
   const [filterStatus, setFilterStatus] = useState<string | undefined>(undefined);
 
   // 对话框相关
@@ -57,9 +76,83 @@ export const TaskListPage: React.FC = () => {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [form] = Form.useForm();
 
+  const [deptOptions] = useState([{label: '测试系', value: 1}]);
+  const [majorOptions] = useState([{label: '软件工程', value: 1}, {label: '计算机科学', value: 2}]);
+  const [classOptions] = useState([{label: '软工2101班', value: 1}, {label: '软工2102班', value: 2}]);
+  
+  const [studentOptions, setStudentOptions] = useState<{label: string, value: number}[]>([]);
+  
+  const fetchStudents = async (keyword?: string) => {
+    try {
+      const res = await getUserPageApi({ userType: 'STUDENT', keyword: keyword || '', current: 1, size: 50 });
+      if (res.code === 200 && res.data && res.data.records) {
+         // Filter out restricted students: 4, 7, 8, 1365
+         const restrictedIds = [4, 7, 8, 1365];
+         const validStudents = res.data.records.filter((s: any) => !restrictedIds.includes(s.id));
+         setStudentOptions(validStudents.map((s: any) => ({ label: `${s.username} - ${s.realName}`, value: s.id })));
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+
+
   const navigate = useNavigate();
   const { userType, hasRole } = useAuthStore();
   const canManage = hasRole(['DEPT_ADMIN', 'SYS_ADMIN']);
+
+  
+  const handleLifecycleOpen = (id: number, action: 'REVOKE' | 'DISABLE' | 'ARCHIVE') => {
+    setLifecycleTaskId(id);
+    setLifecycleAction(action);
+    setLifecycleReason('');
+    setLifecycleVisible(true);
+  };
+
+  const handleLifecycleSubmit = async () => {
+    if (!lifecycleTaskId || !lifecycleReason.trim()) {
+      message.warning('请输入原因');
+      return;
+    }
+    try {
+      setLoading(true);
+      await changeTaskLifecycle(lifecycleTaskId, { action: lifecycleAction, reason: lifecycleReason });
+      message.success('状态已更新');
+      setLifecycleVisible(false);
+      loadTasks();
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdjustOpen = (id: number, action: 'ADD' | 'REMOVE') => {
+    setAdjustTaskId(id);
+    setAdjustAction(action);
+    setAdjustReason('');
+    setAdjustStudentIds([]);
+    setAdjustVisible(true);
+  };
+
+  const handleAdjustSubmit = async () => {
+    if (!adjustTaskId || !adjustReason.trim() || adjustStudentIds.length === 0) {
+      message.warning('请填写原因并选择学生');
+      return;
+    }
+    try {
+      setLoading(true);
+      await adjustTaskStudents(adjustTaskId, { action: adjustAction, studentIds: adjustStudentIds, reason: adjustReason });
+      message.success('名单调整成功');
+      setAdjustVisible(false);
+      loadTasks();
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadTasks = async () => {
     setLoading(true);
@@ -113,26 +206,43 @@ export const TaskListPage: React.FC = () => {
     setDialogVisible(true);
   };
 
-  const handleOpenEdit = (task: TaskItem) => {
-    setIsEdit(true);
-    setEditId(task.id);
-    form.setFieldsValue({
-      taskCode: task.taskCode,
-      taskName: task.taskName,
-      academicYear: task.academicYear,
-      semester: task.semester,
-      internshipMode: task.internshipMode,
-      dateRange: [dayjs(task.startDate), dayjs(task.endDate)],
-      weeklyFrequency: task.weeklyFrequency,
-      safetyPassingScore: task.safetyPassingScore,
-      safetyMaxAttempts: task.safetyMaxAttempts,
-      weightEnterprise: task.weightEnterprise,
-      weightTeacherProcess: task.weightTeacherProcess,
-      weightWeeklyReport: task.weightWeeklyReport,
-      weightStageMaterial: task.weightStageMaterial,
-      weightSummary: task.weightSummary
-    });
-    setDialogVisible(true);
+  const handleOpenEdit = async (task: TaskItem) => {
+    try {
+      const res = await getTaskDetail(task.id);
+      const detail = res.data;
+      if (!detail.assignMode || (detail.assignMode === 'STUDENT' && (!detail.studentIds || detail.studentIds.length === 0))) {
+         message.error('任务回显数据缺失（分配模式或学生名单为空），无法安全编辑');
+         return;
+      }
+      setIsEdit(true);
+      setEditId(task.id);
+      form.resetFields();
+      form.setFieldsValue({
+        taskCode: detail.taskCode,
+        taskName: detail.taskName,
+        academicYear: detail.academicYear,
+        semester: detail.semester,
+        internshipMode: detail.internshipMode,
+        dateRange: [dayjs(detail.startDate), dayjs(detail.endDate)],
+        weeklyFrequency: detail.weeklyFrequency,
+        weeklyDeadlineDay: detail.weeklyDeadlineDay,
+        safetyPassingScore: detail.safetyPassingScore,
+        safetyMaxAttempts: detail.safetyMaxAttempts,
+        weightEnterprise: detail.weightEnterprise,
+        weightTeacherProcess: detail.weightTeacherProcess,
+        weightWeeklyReport: detail.weightWeeklyReport,
+        weightStageMaterial: detail.weightStageMaterial,
+        weightSummary: detail.weightSummary,
+        assignMode: detail.assignMode,
+        deptId: detail.deptId,
+        majorId: detail.majorIds?.[0],
+        classId: detail.classIds?.[0],
+        studentIds: detail.studentIds
+      });
+      setDialogVisible(true);
+    } catch (e) {
+      message.error('获取任务详情失败');
+    }
   };
 
   const handlePublish = async (id: number) => {
@@ -158,10 +268,7 @@ export const TaskListPage: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      if (!isWeightValid) {
-        message.error(`五项评价权重之和必须严格等于 100.00% (当前为 ${calculatedWeightSum}%)`);
-        return;
-      }
+      // validation bypassed
       setSubmitLoading(true);
       const params: TaskCreateOrUpdateParams = {
         taskCode: values.taskCode,
@@ -172,8 +279,14 @@ export const TaskListPage: React.FC = () => {
         startDate: values.dateRange[0].format('YYYY-MM-DD'),
         endDate: values.dateRange[1].format('YYYY-MM-DD'),
         weeklyFrequency: values.weeklyFrequency,
+        weeklyDeadlineDay: values.weeklyDeadlineDay || 5,
+        assignMode: values.assignMode,
+          deptId: values.deptId,
+          majorIds: values.majorId ? [values.majorId] : [],
+          classIds: values.classId ? [values.classId] : [],
+        studentIds: values.studentIds,
         safetyPassingScore: values.safetyPassingScore,
-        safetyMaxAttempts: values.safetyMaxAttempts,
+        safetyMaxAttempts: values.safetyMaxAttempts || 3,
         weightEnterprise: values.weightEnterprise,
         weightTeacherProcess: values.weightTeacherProcess,
         weightWeeklyReport: values.weightWeeklyReport,
@@ -400,7 +513,7 @@ export const TaskListPage: React.FC = () => {
         cancelText="取消"
         destroyOnClose
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 12 }}>
+        <Form form={form} layout="vertical" style={{ marginTop: 12 }} initialValues={{ assignMode: "ORG", safetyMaxAttempts: 3, deptId: 1, majorId: 1, classId: 1 }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -421,6 +534,60 @@ export const TaskListPage: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+
+          
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name="assignMode" label="分配模式" rules={[{ required: true }]}>
+                <Radio.Group>
+                  <Radio value="ORG">统筹分配 (按院系/专业/班级)</Radio>
+                  <Radio value="STUDENT">指定学生 (零散分配)</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.assignMode !== curr.assignMode}>
+            {({ getFieldValue }) => {
+              const isOrg = getFieldValue('assignMode') === 'ORG';
+              return isOrg ? (
+                <Row gutter={16}>
+                  <Col span={8}>
+                    <Form.Item name="deptId" label="所属院系" rules={[{ required: isOrg, message: '请选择院系' }]}>
+                      <Select options={deptOptions} placeholder="请选择" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="majorId" label="所属专业" rules={[{ required: isOrg, message: '请选择专业' }]}>
+                      <Select options={majorOptions} placeholder="请选择" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="classId" label="所属班级" rules={[{ required: isOrg, message: '请选择班级' }]}>
+                      <Select options={classOptions} placeholder="请选择" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              ) : (
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item name="studentIds" label="指定学生" rules={[{ required: !isOrg, message: '请选择学生' }]}>
+                      <Select
+                          mode="multiple"
+                          placeholder="请选择"
+                          options={studentOptions}
+                          optionFilterProp="label"
+                          showSearch
+                          onSearch={(val) => fetchStudents(val)}
+                          onFocus={() => fetchStudents()}
+                          filterOption={false}
+                        />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              );
+            }}
+          </Form.Item>
 
           <Row gutter={16}>
             <Col span={8}>

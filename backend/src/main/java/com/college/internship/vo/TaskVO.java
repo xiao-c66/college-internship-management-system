@@ -29,6 +29,8 @@ public class TaskVO extends BaseVO {
     private String academicYear;
     private Integer semester;
     private String internshipMode;
+    private String assignMode;
+    private java.util.List<Long> studentIds;
     private LocalDate startDate;
     private LocalDate endDate;
     private BigDecimal weightEnterprise;

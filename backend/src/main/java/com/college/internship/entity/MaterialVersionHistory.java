@@ -35,6 +35,8 @@ public class MaterialVersionHistory implements Serializable {
     private String contentText;
     private String attachmentUrl;
     private String fileName;
+    private Long fileSize;
+    private String fileHash;
     private LocalDateTime submitTime;
     private Long auditTeacherId;
     private BigDecimal auditScore;

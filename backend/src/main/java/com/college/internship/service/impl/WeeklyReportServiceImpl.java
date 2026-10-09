@@ -179,7 +179,7 @@ public class WeeklyReportServiceImpl implements IWeeklyReportService {
 
         String action = dto.getAction().trim().toUpperCase();
         if (report != null) {
-            if ("REVIEWED".equals(report.getStatus())) {
+            if ("REVIEWED".equals(report.getStatus()) || "APPROVED".equals(report.getStatus())) {
                 throw new BusinessException(400, "该周报已批阅锁定，禁止修改或重新提交");
             }
             if ("SUBMITTED".equals(report.getStatus())) {
@@ -301,7 +301,7 @@ public class WeeklyReportServiceImpl implements IWeeklyReportService {
             throw new BusinessException(403, "无权批阅非本人负责的学生周报");
         }
 
-        if ("REVIEWED".equals(report.getStatus())) {
+        if ("REVIEWED".equals(report.getStatus()) || "APPROVED".equals(report.getStatus())) {
             throw new BusinessException(400, "该周报已批阅锁定，禁止重复批阅");
         }
         if ("DRAFT".equals(report.getStatus())) {
@@ -361,7 +361,13 @@ public class WeeklyReportServiceImpl implements IWeeklyReportService {
     public List<WeeklyReportVO> listReports(Long taskId, Long studentId, String status, LoginUser loginUser) {
         LambdaQueryWrapper<InternshipWeeklyReport> qw = new LambdaQueryWrapper<>();
         qw.eq(taskId != null, InternshipWeeklyReport::getTaskId, taskId);
-        qw.eq(StringUtils.hasText(status), InternshipWeeklyReport::getStatus, status);
+        if (StringUtils.hasText(status)) {
+            if ("REVIEWED".equalsIgnoreCase(status) || "APPROVED".equalsIgnoreCase(status)) {
+                qw.in(InternshipWeeklyReport::getStatus, List.of("REVIEWED", "APPROVED"));
+            } else {
+                qw.eq(InternshipWeeklyReport::getStatus, status.trim().toUpperCase());
+            }
+        }
 
         // 行级数据权限隔离
         if ("STUDENT".equals(loginUser.getUserType())) {
@@ -557,7 +563,7 @@ public class WeeklyReportServiceImpl implements IWeeklyReportService {
         int totalSubmitted = (int) allReports.stream().filter(r -> !"DRAFT".equals(r.getStatus())).count();
         int totalOnTime = (int) allReports.stream().filter(r -> !"DRAFT".equals(r.getStatus()) && (r.getIsOverdue() == null || r.getIsOverdue() == 0)).count();
         int totalOverdue = (int) allReports.stream().filter(r -> !"DRAFT".equals(r.getStatus()) && (r.getIsOverdue() != null && r.getIsOverdue() == 1)).count();
-        int totalReviewed = (int) allReports.stream().filter(r -> "REVIEWED".equals(r.getStatus())).count();
+        int totalReviewed = (int) allReports.stream().filter(r -> "REVIEWED".equals(r.getStatus()) || "APPROVED".equals(r.getStatus())).count();
         int totalPending = (int) allReports.stream().filter(r -> "SUBMITTED".equals(r.getStatus())).count();
 
         BigDecimal submitRate = totalExpectedReports > 0 ? BigDecimal.valueOf(totalSubmitted).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(totalExpectedReports), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;

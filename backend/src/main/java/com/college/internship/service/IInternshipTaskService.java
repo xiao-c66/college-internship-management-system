@@ -56,4 +56,7 @@ public interface IInternshipTaskService extends IBaseService {
      * 单个或批量指派/调整指导教师 (ASSIGN-001 ~ ASSIGN-003)
      */
     void assignTeacher(Long taskId, com.college.internship.dto.TeacherAssignDTO dto, LoginUser loginUser);
+
+    void changeLifecycle(Long taskId, com.college.internship.dto.LifecycleDTO dto, com.college.internship.security.LoginUser loginUser);
+    void adjustStudents(Long taskId, com.college.internship.dto.StudentAdjustDTO dto, com.college.internship.security.LoginUser loginUser);
 }

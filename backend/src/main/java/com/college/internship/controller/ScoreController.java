@@ -88,6 +88,14 @@ public class ScoreController {
         return Result.success();
     }
 
+    @PostMapping("/summaries/{id}/publish")
+    @Operation(summary = "发布单个学生成绩进入公示期")
+    public Result<Void> publishScore(@PathVariable("id") Long id,
+                                     @AuthenticationPrincipal LoginUser loginUser) {
+        scoreService.publishScore(id, loginUser);
+        return Result.success();
+    }
+
     @PostMapping("/appeals")
     @Operation(summary = "公示期提交成绩申诉 (API-096)")
     public Result<Long> submitAppeal(@Valid @RequestBody ScoreAppealDTO dto,

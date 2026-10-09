@@ -40,6 +40,8 @@ public class TaskCreateDTO extends BaseDTO {
 
     @NotBlank(message = "组织模式不能为空")
     private String internshipMode;
+    private String assignMode;
+    private java.util.List<Long> studentIds;
 
     @NotNull(message = "实习开始日期不能为空")
     private LocalDate startDate;

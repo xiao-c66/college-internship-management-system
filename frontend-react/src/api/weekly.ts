@@ -48,17 +48,18 @@ export interface WeeklyReportVO {
 export interface WeeklyReportHistory {
   id: number;
   reportId: number;
+  taskId?: number;
+  studentId?: number;
   version: number;
-  workContent?: string;
-  workSummary?: string;
-  problemEncountered?: string;
-  nextWeekPlan?: string;
-  attachmentUrl?: string;
-  submitTime?: string;
+  action: 'SUBMIT' | 'APPROVE' | 'RETURN' | string;
+  operatorId?: number;
+  operatorName?: string;
+  operatorRole?: string;
+  returnReason?: string;
   score?: number;
   reviewComment?: string;
-  reviewerName?: string;
-  createTime?: string;
+  snapshotContent?: string;
+  operateTime?: string;
 }
 
 export interface WeeklyReportDetailVO extends WeeklyReportVO {

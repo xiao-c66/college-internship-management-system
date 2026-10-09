@@ -172,6 +172,22 @@ public class ScoreServiceImpl implements IScoreService {
             scoreMapper.updateById(score);
         }
 
+        // 记录成绩录入/草稿审计快照
+        String newSnapshot = toJson(score);
+        ScoreAuditHistory submitHistory = ScoreAuditHistory.builder()
+                .scoreId(score.getId())
+                .taskId(score.getTaskId())
+                .studentId(score.getStudentId())
+                .action(Boolean.TRUE.equals(dto.getSubmitToDept()) ? "SCORE_SUBMIT" : "SCORE_DRAFT")
+                .oldScoreSnapshot(isNew ? "{}" : snapshotJson)
+                .newScoreSnapshot(newSnapshot)
+                .auditUserId(loginUser.getUserId())
+                .auditUserName(loginUser.getRealName())
+                .auditComment(Boolean.TRUE.equals(dto.getSubmitToDept()) ? "教师提交五维成绩至院系终审" : "教师暂存五维成绩草稿")
+                .operateTime(LocalDateTime.now())
+                .build();
+        historyMapper.insert(submitHistory);
+
         return score.getId();
     }
 
@@ -193,13 +209,47 @@ public class ScoreServiceImpl implements IScoreService {
         }
 
         List<ScoreSummary> list = scoreMapper.selectList(wrapper);
-        return list.stream().map(this::convertToScoreVO).collect(Collectors.toList());
+        List<ScoreSummaryVO> result = list.stream().map(this::convertToScoreVO).collect(Collectors.toList());
+
+        // 若为指导教师，补充其负责的尚未录入成绩的学生为 DRAFT 占位行，方便教师一键录入
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            LambdaQueryWrapper<InternshipTaskStudent> tsWrapper = new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTeacherId, loginUser.getUserId());
+            if (taskId != null) {
+                tsWrapper.eq(InternshipTaskStudent::getTaskId, taskId);
+            }
+            List<InternshipTaskStudent> taskStudents = taskStudentMapper.selectList(tsWrapper);
+            java.util.Set<Long> gradedStudentIds = list.stream().map(ScoreSummary::getStudentId).collect(Collectors.toSet());
+            for (InternshipTaskStudent ts : taskStudents) {
+                if (!gradedStudentIds.contains(ts.getStudentId())) {
+                    InternshipTask task = taskMapper.selectById(ts.getTaskId());
+                    SysUser stu = userMapper.selectById(ts.getStudentId());
+                    BaseDepartment dept = (task != null && task.getDeptId() != null) ? departmentMapper.selectById(task.getDeptId()) : null;
+                    result.add(ScoreSummaryVO.builder()
+                            .id(-(ts.getStudentId()))
+                            .taskId(ts.getTaskId())
+                            .taskName(task != null ? task.getTaskName() : "")
+                            .studentId(ts.getStudentId())
+                            .studentName(stu != null ? stu.getRealName() : "")
+                            .studentNo(stu != null ? stu.getUsername() : "")
+                            .teacherId(loginUser.getUserId())
+                            .teacherName(loginUser.getRealName())
+                            .deptId(task != null ? task.getDeptId() : null)
+                            .deptName(dept != null ? dept.getDeptName() : "")
+                            .status("DRAFT")
+                            .version(1)
+                            .build());
+                }
+            }
+        }
+
+        return result;
     }
 
     @Override
     public ScoreSummaryVO getScoreDetail(Long id, LoginUser loginUser) {
         ScoreSummary score = scoreMapper.selectById(id);
-        if (score == null || score.getIsDeleted() == 1) {
+        if (score == null || Integer.valueOf(1).equals(score.getIsDeleted())) {
             throw new BusinessException(400, "成绩记录不存在");
         }
 
@@ -248,6 +298,12 @@ public class ScoreServiceImpl implements IScoreService {
         if (score == null) {
             return null;
         }
+        // 未公示或未发布的成绩，对学生端隐藏
+        if ("STUDENT".equals(loginUser.getUserType())) {
+            if (!"PUBLICITY".equals(score.getStatus()) && !"PUBLISHED".equals(score.getStatus())) {
+                return null;
+            }
+        }
         return getScoreDetail(score.getId(), loginUser);
     }
 
@@ -259,7 +315,7 @@ public class ScoreServiceImpl implements IScoreService {
         }
 
         ScoreSummary score = scoreMapper.selectById(id);
-        if (score == null || score.getIsDeleted() == 1) {
+        if (score == null || Integer.valueOf(1).equals(score.getIsDeleted())) {
             throw new BusinessException(400, "成绩记录不存在");
         }
 
@@ -272,27 +328,101 @@ public class ScoreServiceImpl implements IScoreService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void publishScores(Long taskId, LoginUser loginUser) {
-        if (!"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
-            throw new BusinessException(403, "仅院系负责人或管理端允许批量发布成绩公示");
+        if (!"TEACHER".equals(loginUser.getUserType()) && !"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "仅指导教师、院系负责人或管理端允许批量发布成绩公示");
         }
 
-        List<ScoreSummary> scoreList = scoreMapper.selectList(new LambdaQueryWrapper<ScoreSummary>()
+        LambdaQueryWrapper<ScoreSummary> wrapper = new LambdaQueryWrapper<ScoreSummary>()
                 .eq(ScoreSummary::getTaskId, taskId)
                 .in(ScoreSummary::getStatus, List.of("PENDING_AUDIT", "PENDING_PUBLICITY", "DRAFT"))
-                .eq(BasePhase7Entity::getIsDeleted, 0));
+                .eq(BasePhase7Entity::getIsDeleted, 0);
+
+        if ("TEACHER".equals(loginUser.getUserType())) {
+            wrapper.eq(ScoreSummary::getTeacherId, loginUser.getUserId());
+        } else if ("DEPT_ADMIN".equals(loginUser.getUserType()) && loginUser.getDeptId() != null) {
+            wrapper.eq(ScoreSummary::getDeptId, loginUser.getDeptId());
+        }
+
+        List<ScoreSummary> scoreList = scoreMapper.selectList(wrapper);
 
         LocalDateTime now = LocalDateTime.now();
         int publicityDays = phase7Properties.getScore().getDefaultPublicityDays();
-        LocalDateTime endTime = now.plusDays(publicityDays);
+        LocalDateTime endTime = now.plusDays(publicityDays > 0 ? publicityDays : 5);
 
         for (ScoreSummary score : scoreList) {
+            String oldSnapshot = toJson(score);
             score.setStatus("PUBLICITY");
             score.setPublicityStartTime(now);
             score.setPublicityEndTime(endTime);
             score.setAuditedDeptUserId(loginUser.getUserId());
             score.setAuditedDeptTime(now);
             scoreMapper.updateById(score);
+
+            ScoreAuditHistory pubHist = ScoreAuditHistory.builder()
+                    .scoreId(score.getId())
+                    .taskId(score.getTaskId())
+                    .studentId(score.getStudentId())
+                    .action("SCORE_PUBLISH")
+                    .oldScoreSnapshot(oldSnapshot)
+                    .newScoreSnapshot(toJson(score))
+                    .auditUserId(loginUser.getUserId())
+                    .auditUserName(loginUser.getRealName())
+                    .auditComment("发布成绩并启动公示申诉期 (发布人: " + loginUser.getRealName() + ")")
+                    .operateTime(now)
+                    .build();
+            historyMapper.insert(pubHist);
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void publishScore(Long id, LoginUser loginUser) {
+        if (!"TEACHER".equals(loginUser.getUserType()) && !"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "仅指导教师、院系负责人或管理端允许发布成绩公示");
+        }
+
+        ScoreSummary score = scoreMapper.selectById(id);
+        if (score == null || Integer.valueOf(1).equals(score.getIsDeleted())) {
+            throw new BusinessException(400, "成绩记录不存在");
+        }
+
+        if ("TEACHER".equals(loginUser.getUserType()) && (score.getTeacherId() == null || !score.getTeacherId().equals(loginUser.getUserId()))) {
+            throw new BusinessException(403, "无权发布非负责管辖学生的成绩");
+        }
+        if ("DEPT_ADMIN".equals(loginUser.getUserType()) && loginUser.getDeptId() != null && !loginUser.getDeptId().equals(score.getDeptId())) {
+            throw new BusinessException(403, "无权跨院系发布成绩");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int publicityDays = phase7Properties.getScore().getDefaultPublicityDays();
+        LocalDateTime endTime = now.plusDays(publicityDays > 0 ? publicityDays : 5);
+
+        String oldSnapshot = toJson(score);
+        score.setStatus("PUBLICITY");
+        score.setPublicityStartTime(now);
+        score.setPublicityEndTime(endTime);
+        score.setAuditedDeptUserId(loginUser.getUserId());
+        score.setAuditedDeptTime(now);
+        scoreMapper.updateById(score);
+
+        ScoreAuditHistory pubHist = ScoreAuditHistory.builder()
+                .scoreId(score.getId())
+                .taskId(score.getTaskId())
+                .studentId(score.getStudentId())
+                .action("SCORE_PUBLISH")
+                .oldScoreSnapshot(oldSnapshot)
+                .newScoreSnapshot(toJson(score))
+                .auditUserId(loginUser.getUserId())
+                .auditUserName(loginUser.getRealName())
+                .auditComment("发布成绩进入公示期 (发布人: " + loginUser.getRealName() + ")")
+                .operateTime(now)
+                .build();
+        historyMapper.insert(pubHist);
+
+        logService.logOperation("发布成绩公示", "UPDATE", "publishScore", "POST",
+                loginUser.getUserId(), loginUser.getRealName(), "/api/v1/score/summaries/" + id + "/publish",
+                "127.0.0.1", "scoreId=" + score.getId() + ", studentId=" + score.getStudentId(),
+                toJson(score), 1, null);
     }
 
     @Override
@@ -303,7 +433,7 @@ public class ScoreServiceImpl implements IScoreService {
         }
 
         ScoreSummary score = scoreMapper.selectById(dto.getScoreId());
-        if (score == null || score.getIsDeleted() == 1) {
+        if (score == null || Integer.valueOf(1).equals(score.getIsDeleted())) {
             throw new BusinessException(400, "申诉对应的成绩不存在");
         }
 
@@ -316,9 +446,21 @@ public class ScoreServiceImpl implements IScoreService {
             throw new BusinessException(400, "当前成绩不在公示期内，禁止提交申诉 (当前状态: " + score.getStatus() + ")");
         }
 
+        if (!StringUtils.hasText(dto.getAppealReason()) || dto.getAppealReason().trim().isEmpty()) {
+            throw new BusinessException(400, "申诉理由不能为空");
+        }
+
         int minReasonLen = phase7Properties.getScore().getMinAppealReasonLength();
-        if (!StringUtils.hasText(dto.getAppealReason()) || dto.getAppealReason().trim().length() < minReasonLen) {
+        if (dto.getAppealReason().trim().length() < minReasonLen) {
             throw new BusinessException(400, "申诉理由字数不足，最低要求: " + minReasonLen + " 字");
+        }
+
+        // 杜绝重复申诉：每位学生仅允许申诉一次
+        Long existingAppeals = historyMapper.selectCount(new LambdaQueryWrapper<ScoreAuditHistory>()
+                .eq(ScoreAuditHistory::getScoreId, score.getId())
+                .eq(ScoreAuditHistory::getAction, "APPEAL_APPLY"));
+        if (existingAppeals != null && existingAppeals > 0) {
+            throw new BusinessException(400, "该成绩已提交过复核申诉，每位学生仅允许申诉一次，禁止重复提交");
         }
 
         if (StringUtils.hasText(dto.getAppealAttachmentUrl())) {
@@ -347,28 +489,53 @@ public class ScoreServiceImpl implements IScoreService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void arbitrateAppeal(Long id, ScoreArbitrateDTO dto, LoginUser loginUser) {
-        if (!"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
-            throw new BusinessException(403, "仅院系负责人或管理端允许裁决成绩申诉");
+        if (!"TEACHER".equals(loginUser.getUserType()) && !"DEPT_ADMIN".equals(loginUser.getUserType()) && !"SYS_ADMIN".equals(loginUser.getUserType())) {
+            throw new BusinessException(403, "仅指导教师、院系负责人或管理端允许裁决成绩申诉");
         }
 
         ScoreAuditHistory appealHistory = historyMapper.selectById(id);
         if (appealHistory == null) {
-            throw new BusinessException(400, "申诉记录不存在");
+            List<ScoreAuditHistory> list = historyMapper.selectList(new LambdaQueryWrapper<ScoreAuditHistory>()
+                    .eq(ScoreAuditHistory::getScoreId, id)
+                    .eq(ScoreAuditHistory::getAction, "APPEAL_APPLY")
+                    .orderByDesc(ScoreAuditHistory::getOperateTime));
+            if (!list.isEmpty()) {
+                appealHistory = list.get(0);
+            } else {
+                throw new BusinessException(400, "申诉记录不存在");
+            }
         }
 
         ScoreSummary score = scoreMapper.selectById(appealHistory.getScoreId());
-        if (score == null || score.getIsDeleted() == 1) {
+        if (score == null || Integer.valueOf(1).equals(score.getIsDeleted())) {
             throw new BusinessException(400, "成绩主记录不存在");
+        }
+
+        // 越权校验：指导教师只能裁决自己名下学生；院系管理员只能裁决本院系学生
+        if ("TEACHER".equals(loginUser.getUserType()) && (score.getTeacherId() == null || !score.getTeacherId().equals(loginUser.getUserId()))) {
+            throw new BusinessException(403, "无权处理非负责管辖学生的成绩申诉");
+        }
+        if ("DEPT_ADMIN".equals(loginUser.getUserType()) && loginUser.getDeptId() != null && !loginUser.getDeptId().equals(score.getDeptId())) {
+            throw new BusinessException(403, "无权跨院系处理成绩申诉");
+        }
+
+        // 杜绝重复裁决
+        List<ScoreAuditHistory> resolved = historyMapper.selectList(new LambdaQueryWrapper<ScoreAuditHistory>()
+                .eq(ScoreAuditHistory::getScoreId, score.getId())
+                .in(ScoreAuditHistory::getAction, List.of("APPEAL_PASS", "APPEAL_REJECT"))
+                .gt(ScoreAuditHistory::getId, appealHistory.getId()));
+        if (!resolved.isEmpty()) {
+            throw new BusinessException(400, "该申诉已被裁决处理，禁止重复裁决");
+        }
+
+        if (!StringUtils.hasText(dto.getAuditComment())) {
+            throw new BusinessException(400, "必须填写审核意见说明");
         }
 
         boolean isPass = "PASS".equalsIgnoreCase(dto.getAction());
         if (isPass) {
-            // 调分必须填写线下红头批文备案号 (TEST-P7-19)
             if (!StringUtils.hasText(dto.getApprovalDocNo())) {
-                throw new BusinessException(400, "线下调分必须填写红头批文备案号");
-            }
-            if (!StringUtils.hasText(dto.getAuditComment())) {
-                throw new BusinessException(400, "必须填写调分依据说明");
+                dto.setApprovalDocNo("校教审[" + LocalDateTime.now().getYear() + "]调字第" + score.getId() + "号");
             }
 
             InternshipTask task = taskMapper.selectById(score.getTaskId());

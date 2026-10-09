@@ -62,6 +62,15 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
         }
         Long studentId = loginUser.getUserId();
 
+        // 强校验：学生必须被圈定在当前实习任务名单中 (TASK-003)
+        InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                .eq(InternshipTaskStudent::getTaskId, dto.getTaskId())
+                .eq(InternshipTaskStudent::getStudentId, studentId)
+                .eq(InternshipTaskStudent::getIsDeleted, 0));
+        if (taskStudent == null) {
+            throw new BusinessException(403, "您未圈定在当前实习任务学生名单中，无权保存申报草稿 (TASK-003)");
+        }
+
         InternshipApply apply = getOrInitStudentApply(dto.getTaskId(), studentId);
 
         // APPLY-009 校验：若已处于终审生效状态，绝对禁止普通修改
@@ -87,6 +96,22 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
             throw new BusinessException(403, "仅学生账号允许提交实习申报");
         }
         Long studentId = loginUser.getUserId();
+
+        // 强校验：学生必须被圈定在当前实习任务名单中 (TASK-003)
+        InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                .eq(InternshipTaskStudent::getTaskId, dto.getTaskId())
+                .eq(InternshipTaskStudent::getStudentId, studentId)
+                .eq(InternshipTaskStudent::getIsDeleted, 0));
+        if (taskStudent == null) {
+            throw new BusinessException(403, "您未圈定在当前实习任务学生名单中，无权发起申报 (TASK-003)");
+        }
+
+        // 强前置硬性约束与防绕过规则：安全教育未完成时，后端严格阻断正式申报提交 (SAFE-010)
+        if (!"COMPLETED".equalsIgnoreCase(taskStudent.getSafetyStatus())) {
+            throw new BusinessException(400, "尚未完成安全教育全套要求（需学完必读规程、考核及格并签署承诺书），当前安全状态为 ["
+                    + (taskStudent.getSafetyStatus() != null ? taskStudent.getSafetyStatus() : "NOT_STARTED")
+                    + "]，禁止提交正式实习申报 (SAFE-010)");
+        }
 
         InternshipApply apply = getOrInitStudentApply(dto.getTaskId(), studentId);
 
@@ -132,6 +157,17 @@ public class InternshipApplyServiceImpl implements IInternshipApplyService {
     @Override
     public ApplyVO getMyApply(Long taskId, LoginUser loginUser) {
         Long studentId = loginUser.getUserId();
+
+        if (loginUser != null && "STUDENT".equals(loginUser.getUserType())) {
+            InternshipTaskStudent taskStudent = taskStudentMapper.selectOne(new LambdaQueryWrapper<InternshipTaskStudent>()
+                    .eq(InternshipTaskStudent::getTaskId, taskId)
+                    .eq(InternshipTaskStudent::getStudentId, studentId)
+                    .eq(InternshipTaskStudent::getIsDeleted, 0));
+            if (taskStudent == null) {
+                throw new BusinessException(403, "您未圈定在当前实习任务学生名单中，无权查询申报 (TASK-003)");
+            }
+        }
+
         InternshipApply apply = applyMapper.selectOne(new LambdaQueryWrapper<InternshipApply>()
                 .eq(InternshipApply::getTaskId, taskId)
                 .eq(InternshipApply::getStudentId, studentId)

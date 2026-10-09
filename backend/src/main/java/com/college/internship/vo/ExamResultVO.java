@@ -21,6 +21,8 @@ public class ExamResultVO extends BaseVO {
 
     private Long attemptId;
     private Integer attemptNo;
+    private Integer maxAttempts;
+    private Integer remainingAttempts;
     private BigDecimal totalScore;
     private Integer passingScore;
     private Integer isPassed;

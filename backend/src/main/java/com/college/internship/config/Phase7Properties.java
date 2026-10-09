@@ -29,6 +29,8 @@ public class Phase7Properties {
         private Integer minMidtermSummaryLength = 500;
         /** 凭据附件最大允许大小 (MB) */
         private Integer maxFileSizeMb = 10;
+        /** 阶段材料持久化存储物理根目录 */
+        private String storageDir = "data/materials";
     }
 
     @Data

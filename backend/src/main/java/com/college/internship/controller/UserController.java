@@ -40,6 +40,41 @@ import org.springframework.web.multipart.MultipartFile;
 @Tag(name = "用户账号管理接口", description = "提供用户列表查询、Excel批量导入预览与执行、独立密码重置、首次改密与忘记密码找回")
 public class UserController {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.college.internship.mapper.BaseDepartmentMapper deptMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.college.internship.mapper.BaseMajorMapper majorMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.college.internship.mapper.BaseClassMapper classMapper;
+
+    @GetMapping("/departments")
+    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'DEPT_ADMIN')")
+    @Operation(summary = "查询院系列表")
+    public Result<java.util.List<com.college.internship.entity.BaseDepartment>> getDepartments() {
+        return Result.success(deptMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.BaseDepartment>().eq(com.college.internship.entity.BaseDepartment::getIsDeleted, 0)));
+    }
+
+    @GetMapping("/majors")
+    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'DEPT_ADMIN')")
+    @Operation(summary = "查询专业列表")
+    public Result<java.util.List<com.college.internship.entity.BaseMajor>> getMajors(@org.springframework.web.bind.annotation.RequestParam(required = false) Long deptId) {
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.BaseMajor> wrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        wrapper.eq(com.college.internship.entity.BaseMajor::getIsDeleted, 0);
+        if (deptId != null) wrapper.eq(com.college.internship.entity.BaseMajor::getDeptId, deptId);
+        return Result.success(majorMapper.selectList(wrapper));
+    }
+
+    @GetMapping("/classes")
+    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'DEPT_ADMIN')")
+    @Operation(summary = "查询班级列表")
+    public Result<java.util.List<com.college.internship.entity.BaseClass>> getClasses(@org.springframework.web.bind.annotation.RequestParam(required = false) Long majorId) {
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.college.internship.entity.BaseClass> wrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        wrapper.eq(com.college.internship.entity.BaseClass::getIsDeleted, 0);
+        if (majorId != null) wrapper.eq(com.college.internship.entity.BaseClass::getMajorId, majorId);
+        return Result.success(classMapper.selectList(wrapper));
+    }
+
+
     private final IUserService userService;
 
     @GetMapping

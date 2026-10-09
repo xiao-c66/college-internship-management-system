@@ -17,6 +17,8 @@ import {
   Timeline,
   Typography,
   Empty,
+  Upload,
+  Tooltip,
   message
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -24,17 +26,20 @@ import {
   ReloadOutlined,
   UploadOutlined,
   HistoryOutlined,
-  FileSearchOutlined,
   CheckCircleOutlined,
-  InfoCircleOutlined
+  InboxOutlined,
+  DownloadOutlined,
+  SafetyCertificateOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../store/useAuthStore';
-import { getTaskList, type TaskItem } from '../../api/task';
+import { getTaskList, getTaskStudents, type TaskItem, type TaskStudentItem } from '../../api/task';
 import {
   getMaterialItems,
   getMaterialVersions,
   submitMaterial,
   auditMaterial,
+  uploadMaterialFile,
   type MaterialItemVO,
   type MaterialVersionVO
 } from '../../api/material';
@@ -42,13 +47,14 @@ import {
 const { Title, Text, Paragraph } = Typography;
 
 export const MaterialPage: React.FC = () => {
-  const { userType } = useAuthStore();
+  const { userType, user } = useAuthStore();
   const isStudent = userType === 'STUDENT';
   const isTeacher = userType === 'TEACHER';
 
   // 基础数据与任务列表
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [taskStudents, setTaskStudents] = useState<TaskStudentItem[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>(undefined);
   const [materialList, setMaterialList] = useState<MaterialItemVO[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,9 +62,11 @@ export const MaterialPage: React.FC = () => {
   // 材料提报弹窗 (学生)
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [activeItem, setActiveItem] = useState<MaterialItemVO | null>(null);
   const [submitForm] = Form.useForm();
   const [contentTextValue, setContentTextValue] = useState('');
+  const [uploadedFileHash, setUploadedFileHash] = useState<string>('');
 
   // 查验打分弹窗 (教师/管理员)
   const [auditModalOpen, setAuditModalOpen] = useState(false);
@@ -81,6 +89,24 @@ export const MaterialPage: React.FC = () => {
     return contentTextValue ? contentTextValue.trim().length : 0;
   }, [contentTextValue]);
 
+  // 从材料清单中提取学生选项
+  const studentOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const item of materialList) {
+      if (item.studentId && item.studentName) {
+        map.set(item.studentId, `${item.studentName} (${item.studentNo || item.studentId})`);
+      }
+    }
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [materialList]);
+
+  const displayMaterialList = useMemo(() => {
+    if (!isStudent && selectedStudentId) {
+      return materialList.filter(item => item.studentId === selectedStudentId);
+    }
+    return materialList;
+  }, [isStudent, selectedStudentId, materialList]);
+
   // 初始化加载
   useEffect(() => {
     loadTasks();
@@ -93,8 +119,9 @@ export const MaterialPage: React.FC = () => {
         const records = Array.isArray(res.data) ? res.data : (res.data as any).records || [];
         setTasks(records);
         if (records.length > 0) {
-          setSelectedTaskId(records[0].id);
-          fetchMaterials(records[0].id, selectedStudentId);
+          const firstTaskId = records[0].id;
+          setSelectedTaskId(firstTaskId);
+          fetchMaterials(firstTaskId);
         }
       }
     } catch (e: any) {
@@ -105,11 +132,7 @@ export const MaterialPage: React.FC = () => {
   const fetchMaterials = async (taskId?: number, studentId?: number) => {
     const tid = taskId ?? selectedTaskId;
     if (!tid) return;
-    if (!isStudent && studentId === undefined && selectedStudentId === undefined) {
-      setMaterialList([]);
-      return;
-    }
-    const sid = studentId ?? selectedStudentId;
+    const sid = studentId !== undefined ? studentId : selectedStudentId;
     setLoading(true);
     try {
       const res = await getMaterialItems(tid, sid);
@@ -125,7 +148,12 @@ export const MaterialPage: React.FC = () => {
 
   const handleTaskChange = (val: number) => {
     setSelectedTaskId(val);
-    fetchMaterials(val, selectedStudentId);
+    setSelectedStudentId(undefined);
+    fetchMaterials(val, undefined);
+  };
+
+  const handleStudentChange = (val?: number) => {
+    setSelectedStudentId(val);
   };
 
   // 格式化辅助
@@ -153,20 +181,128 @@ export const MaterialPage: React.FC = () => {
     return str.replace('T', ' ').substring(0, 19);
   };
 
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
   const canAudit = (row: MaterialItemVO) => {
     return (isTeacher || !isStudent) && (row.status === 'SUBMITTED' || row.status === 'RETURNED');
+  };
+
+  // 下载附件文件
+  const handleDownload = async (item: MaterialItemVO) => {
+    if (item.attachmentUrl?.startsWith('http://') || item.attachmentUrl?.startsWith('https://')) {
+      window.open(item.attachmentUrl, '_blank');
+      return;
+    }
+    if (item.id) {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/v1/internship/materials/${item.id}/download`, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : ''
+          }
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          message.error(errJson?.message || '下载材料附件失败');
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.fileName || `material_${item.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e: any) {
+        message.error('下载附件失败: ' + e?.message);
+      }
+    }
+  };
+
+  const handleVersionDownload = async (ver: MaterialVersionVO) => {
+    if (ver.attachmentUrl?.startsWith('http://') || ver.attachmentUrl?.startsWith('https://')) {
+      window.open(ver.attachmentUrl, '_blank');
+      return;
+    }
+    if (ver.id) {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/v1/internship/materials/versions/${ver.id}/download`, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : ''
+          }
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          message.error(errJson?.message || '下载历史附件失败');
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = ver.fileName || `material_v${ver.version}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e: any) {
+        message.error('下载历史附件失败: ' + e?.message);
+      }
+    }
   };
 
   // 提报弹窗
   const openSubmitDialog = (item: MaterialItemVO) => {
     setActiveItem(item);
     setContentTextValue(item.contentText || '');
+    setUploadedFileHash(item.fileHash || '');
     submitForm.setFieldsValue({
       attachmentUrl: item.attachmentUrl || '',
       fileName: item.fileName || '',
+      fileSize: item.fileSize,
+      fileHash: item.fileHash || '',
       contentText: item.contentText || ''
     });
     setSubmitModalOpen(true);
+  };
+
+  const handleCustomUpload = async (options: any) => {
+    const { file, onSuccess, onError } = options;
+    if (!selectedTaskId || !activeItem) {
+      onError(new Error('缺少任务或材料信息'));
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await uploadMaterialFile(file as File, selectedTaskId, activeItem.materialCode);
+      if (res.code === 200 && res.data) {
+        const { fileName, fileSize, fileHash, attachmentUrl } = res.data;
+        submitForm.setFieldsValue({
+          fileName,
+          fileSize,
+          fileHash,
+          attachmentUrl
+        });
+        setUploadedFileHash(fileHash);
+        message.success(`文件上传成功！已计算防篡改 SHA-256 摘要`);
+        onSuccess(res.data);
+      } else {
+        throw new Error(res.message || '上传失败');
+      }
+    } catch (e: any) {
+      message.error(e?.message || '上传材料附件失败');
+      onError(e);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmitMaterial = async () => {
@@ -183,10 +319,12 @@ export const MaterialPage: React.FC = () => {
         materialCode: activeItem.materialCode,
         contentText: values.contentText,
         attachmentUrl: values.attachmentUrl,
-        fileName: values.fileName
+        fileName: values.fileName,
+        fileSize: values.fileSize,
+        fileHash: values.fileHash || uploadedFileHash
       });
       if (res.code === 200) {
-        message.success('材料提报成功！已留存新版本快照');
+        message.success('材料提报成功！已留存新版本快照并绑定哈希');
         setSubmitModalOpen(false);
         fetchMaterials();
       }
@@ -260,34 +398,34 @@ export const MaterialPage: React.FC = () => {
       title: '学生姓名',
       dataIndex: 'studentName',
       key: 'studentName',
-      width: 110,
+      width: 100,
       render: v => <Text strong>{v || '-'}</Text>
     },
     {
       title: '学号',
       dataIndex: 'studentNo',
       key: 'studentNo',
-      width: 120,
+      width: 110,
       render: v => <Text type="secondary">{v || '-'}</Text>
     },
     {
       title: '材料名称',
       dataIndex: 'materialName',
       key: 'materialName',
-      minWidth: 160
+      minWidth: 150
     },
     {
       title: '形态',
       dataIndex: 'materialType',
       key: 'materialType',
-      width: 110,
+      width: 100,
       render: v => <Tag color="blue">{getTypeText(v)}</Tag>
     },
     {
       title: '版本',
       dataIndex: 'version',
       key: 'version',
-      width: 80,
+      width: 70,
       align: 'center',
       render: v => <Tag color="purple">v{v}</Tag>
     },
@@ -295,22 +433,37 @@ export const MaterialPage: React.FC = () => {
       title: '查验状态',
       dataIndex: 'status',
       key: 'status',
-      width: 110,
+      width: 100,
       align: 'center',
       render: v => getStatusTag(v)
+    },
+    {
+      title: '防篡改校验 (SHA-256)',
+      key: 'fileHash',
+      width: 180,
+      render: (_, r) => {
+        if (!r.fileHash) return <Text type="secondary">-</Text>;
+        return (
+          <Tooltip title={`完整SHA-256摘要: ${r.fileHash}`}>
+            <Tag color="geekblue" icon={<SafetyCertificateOutlined />}>
+              {r.fileHash.substring(0, 10)}...{r.fileHash.substring(r.fileHash.length - 6)}
+            </Tag>
+          </Tooltip>
+        );
+      }
     },
     {
       title: '提报时间',
       dataIndex: 'submitTime',
       key: 'submitTime',
-      width: 160,
+      width: 150,
       render: v => formatTime(v)
     },
     {
       title: '考评分',
       dataIndex: 'auditScore',
       key: 'auditScore',
-      width: 90,
+      width: 80,
       align: 'center',
       render: v => v != null ? <Text strong style={{ color: '#52c41a' }}>{v}</Text> : <Text type="secondary">未评</Text>
     },
@@ -318,13 +471,13 @@ export const MaterialPage: React.FC = () => {
       title: '查验导师',
       dataIndex: 'auditTeacherName',
       key: 'auditTeacherName',
-      width: 100,
+      width: 90,
       render: v => v || '-'
     },
     {
       title: '操作',
       key: 'action',
-      width: 220,
+      width: 230,
       fixed: 'right',
       align: 'center',
       render: (_, row) => (
@@ -353,11 +506,10 @@ export const MaterialPage: React.FC = () => {
             <Button
               type="link"
               size="small"
-              href={row.attachmentUrl}
-              target="_blank"
-              rel="noreferrer"
+              icon={<DownloadOutlined />}
+              onClick={() => handleDownload(row)}
             >
-              凭证
+              凭证下载
             </Button>
           )}
         </Space>
@@ -379,26 +531,24 @@ export const MaterialPage: React.FC = () => {
               三方协议、录用通知、岗位记录、中期进展总结及毕业实习总结报告规范提报与导师查验
             </Paragraph>
           </div>
-          <Space>
+          <Space wrap>
             <Select
               value={selectedTaskId}
               placeholder="选择实习任务批次"
-              style={{ width: 280 }}
+              style={{ width: 260 }}
               options={tasks.map(t => ({ label: t.taskName, value: t.id }))}
               onChange={handleTaskChange}
             />
             {!isStudent && (
-              <Input
-                placeholder="输入学生ID查验"
-                style={{ width: 150 }}
+              <Select
                 value={selectedStudentId}
-                type="number"
+                placeholder="全部负责学生 (可筛选)"
+                style={{ width: 220 }}
                 allowClear
-                onChange={e => {
-                  const val = e.target.value ? Number(e.target.value) : undefined;
-                  setSelectedStudentId(val);
-                }}
-                onPressEnter={() => fetchMaterials()}
+                showSearch
+                optionFilterProp="label"
+                options={studentOptions}
+                onChange={handleStudentChange}
               />
             )}
             <Button type="primary" icon={<ReloadOutlined />} loading={loading} onClick={() => fetchMaterials()}>
@@ -412,8 +562,8 @@ export const MaterialPage: React.FC = () => {
       <Alert
         type="info"
         showIcon
-        message="阶段材料提报规范说明"
-        description="学生在各阶段须提报三方协议、入职通知书、岗位安全记录、中期进展总结及毕业实习总结报告（总结报告字数动态强约束，默认需达到1500字）。提报后自动留存版本快照，支持导师查验评分与追溯。"
+        message="阶段材料提报与防篡改规范说明"
+        description="学生在各阶段须提报三方协议、入职通知书、岗位安全记录、中期进展总结及毕业实习总结报告。上传附件支持 PDF、Word、图片及 ZIP 格式，服务端自动检测文件魔数并实时计算 SHA-256 完整性摘要。历史版本与评语永久追溯，已查验合格的材料禁止修改。"
         style={{ marginBottom: 20 }}
       />
 
@@ -428,7 +578,7 @@ export const MaterialPage: React.FC = () => {
                     hoverable
                     style={{
                       borderRadius: 8,
-                      minHeight: 260,
+                      minHeight: 280,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between'
@@ -450,6 +600,22 @@ export const MaterialPage: React.FC = () => {
                       <Paragraph style={{ margin: '4px 0' }}>
                         <Text strong>当前版本：</Text><Tag color="purple">v{item.version || 1}</Tag>
                       </Paragraph>
+                      {item.fileName && (
+                        <Paragraph style={{ margin: '4px 0' }}>
+                          <Text strong>附件文件：</Text>
+                          <Text code>{item.fileName}</Text> {item.fileSize ? `(${formatFileSize(item.fileSize)})` : ''}
+                        </Paragraph>
+                      )}
+                      {item.fileHash && (
+                        <Paragraph style={{ margin: '4px 0' }}>
+                          <Text strong>防篡改摘要：</Text>
+                          <Tooltip title={`SHA-256: ${item.fileHash}`}>
+                            <Tag color="geekblue" icon={<SafetyCertificateOutlined />}>
+                              {item.fileHash.substring(0, 12)}...
+                            </Tag>
+                          </Tooltip>
+                        </Paragraph>
+                      )}
                       {item.minContentLength != null && item.minContentLength > 0 && (
                         <Paragraph style={{ margin: '4px 0' }}>
                           <Text strong>字数门槛：</Text>不少于 {item.minContentLength} 字
@@ -464,6 +630,7 @@ export const MaterialPage: React.FC = () => {
                         <Paragraph style={{ margin: '4px 0' }}>
                           <Text strong>查验得分：</Text>
                           <Text strong style={{ color: '#52c41a', fontSize: 16 }}> {item.auditScore} 分</Text>
+                          {item.auditTeacherName && <Text type="secondary">（{item.auditTeacherName}）</Text>}
                         </Paragraph>
                       )}
                       {item.auditComment && (
@@ -475,7 +642,7 @@ export const MaterialPage: React.FC = () => {
                     </div>
 
                     <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 12, marginTop: 12 }}>
-                      <Space>
+                      <Space wrap>
                         <Button
                           type="primary"
                           size="small"
@@ -483,7 +650,7 @@ export const MaterialPage: React.FC = () => {
                           icon={<UploadOutlined />}
                           onClick={() => openSubmitDialog(item)}
                         >
-                          {item.status === 'UNSUBMITTED' ? '提报材料' : '重提新版'}
+                          {item.status === 'UNSUBMITTED' ? '提报材料' : item.status === 'APPROVED' ? '查验已合格' : '修改重提'}
                         </Button>
                         {item.id && (
                           <Button
@@ -498,11 +665,10 @@ export const MaterialPage: React.FC = () => {
                           <Button
                             size="small"
                             type="link"
-                            href={item.attachmentUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                            icon={<DownloadOutlined />}
+                            onClick={() => handleDownload(item)}
                           >
-                            查看凭证
+                            下载凭证
                           </Button>
                         )}
                       </Space>
@@ -522,18 +688,18 @@ export const MaterialPage: React.FC = () => {
         <Card style={{ borderRadius: 8 }}>
           <Table
             columns={columns}
-            dataSource={materialList}
+            dataSource={displayMaterialList}
             rowKey={(r, idx) => r.id || `${r.materialCode}_${idx}`}
             loading={loading}
             pagination={{ pageSize: 10, showSizeChanger: true }}
-            scroll={{ x: 1200 }}
+            scroll={{ x: 1300 }}
           />
         </Card>
       )}
 
       {/* 材料提报弹窗 (学生) */}
       <Modal
-        title={`提报材料: ${activeItem?.materialName} (v${(activeItem?.version || 0) + 1})`}
+        title={`提报材料: ${activeItem?.materialName} (v${(activeItem?.version || 0) + (activeItem?.status === 'UNSUBMITTED' ? 0 : 1)})`}
         open={submitModalOpen}
         onCancel={() => setSubmitModalOpen(false)}
         onOk={handleSubmitMaterial}
@@ -543,6 +709,21 @@ export const MaterialPage: React.FC = () => {
         width={680}
         destroyOnClose
       >
+        {activeItem?.status === 'RETURNED' && activeItem.auditComment && (
+          <Alert
+            type="error"
+            showIcon
+            message="上一版本查验退回指导意见"
+            description={
+              <div>
+                <Paragraph style={{ margin: 0 }}>{activeItem.auditComment}</Paragraph>
+                <Text type="secondary" style={{ fontSize: 12 }}>请严格对照导师意见修改或重新上传合规文件后提交。</Text>
+              </div>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
         <Form form={submitForm} layout="vertical">
           <Form.Item label="材料编码">
             <Input value={activeItem?.materialCode} disabled />
@@ -550,16 +731,40 @@ export const MaterialPage: React.FC = () => {
 
           {(activeItem?.materialType === 'VOUCHER_FILE' || activeItem?.materialType === 'HYBRID') && (
             <>
-              <Form.Item
-                name="attachmentUrl"
-                label="凭据佐证网络链接"
-                rules={[{ required: true, message: '请输入凭据网络链接' }]}
-                extra="仅支持标准HTTP/HTTPS协议，禁止内网敏感IP及回环地址"
-              >
-                <Input placeholder="例如 https://oss.college.edu.cn/vouchers/..." />
+              <Form.Item label="上传佐证附件文件" extra="支持 PDF、Word(doc/docx)、图片(png/jpg)及 ZIP 压缩包，最大 10MB。系统将自动验证文件特征并计算 SHA-256 摘要。">
+                <Upload.Dragger
+                  name="file"
+                  multiple={false}
+                  showUploadList={false}
+                  customRequest={handleCustomUpload}
+                  disabled={uploading}
+                >
+                  <p className="ant-upload-drag-icon">
+                    <InboxOutlined style={{ fontSize: 32, color: '#1677ff' }} />
+                  </p>
+                  <p className="ant-upload-text">点击或将凭证文件拖拽到此区域上传</p>
+                  <p className="ant-upload-hint">自动计算并保存文件防篡改哈希</p>
+                </Upload.Dragger>
               </Form.Item>
-              <Form.Item name="fileName" label="凭据文件名">
-                <Input placeholder="选填，如 三方协议盖章件_2026.pdf" />
+
+              <Form.Item name="fileName" label="凭据文件名" rules={[{ required: true, message: '请上传凭证文件或输入文件名' }]}>
+                <Input placeholder="上传文件后自动填入" />
+              </Form.Item>
+
+              <Form.Item name="attachmentUrl" label="凭据附件路径" rules={[{ required: true, message: '附件路径不能为空' }]}>
+                <Input placeholder="上传文件后自动生成安全存储路径" readOnly />
+              </Form.Item>
+
+              <Form.Item name="fileSize" hidden>
+                <InputNumber />
+              </Form.Item>
+
+              <Form.Item name="fileHash" label="防篡改完整性哈希 (SHA-256)">
+                <Input
+                  readOnly
+                  placeholder="文件上传后自动生成 SHA-256 摘要"
+                  prefix={<SafetyCertificateOutlined style={{ color: '#52c41a' }} />}
+                />
               </Form.Item>
             </>
           )}
@@ -581,7 +786,7 @@ export const MaterialPage: React.FC = () => {
               ]}
             >
               <Input.TextArea
-                rows={12}
+                rows={10}
                 placeholder="请输入正文内容..."
                 value={contentTextValue}
                 onChange={e => setContentTextValue(e.target.value)}
@@ -613,6 +818,15 @@ export const MaterialPage: React.FC = () => {
           <Form.Item label="材料名称">
             <Text strong>{activeItem?.materialName} (v{activeItem?.version})</Text>
           </Form.Item>
+          {activeItem?.fileHash && (
+            <Form.Item label="防篡改 SHA-256">
+              <Tooltip title={activeItem.fileHash}>
+                <Tag color="geekblue" icon={<SafetyCertificateOutlined />}>
+                  {activeItem.fileHash}
+                </Tag>
+              </Tooltip>
+            </Form.Item>
+          )}
           <Form.Item name="action" label="查验结论" rules={[{ required: true }]}>
             <Radio.Group>
               <Radio value="APPROVED">查验通过</Radio>
@@ -688,12 +902,28 @@ export const MaterialPage: React.FC = () => {
                       </Paragraph>
                     )}
 
+                    {ver.fileHash && (
+                      <Paragraph style={{ margin: '4px 0' }}>
+                        <Text strong>防篡改 SHA-256：</Text>
+                        <Tooltip title={ver.fileHash}>
+                          <Tag color="geekblue" icon={<SafetyCertificateOutlined />}>
+                            {ver.fileHash.substring(0, 16)}...
+                          </Tag>
+                        </Tooltip>
+                      </Paragraph>
+                    )}
+
                     {ver.attachmentUrl && (
                       <Paragraph style={{ margin: '4px 0' }}>
                         <Text strong>凭据附件：</Text>
-                        <a href={ver.attachmentUrl} target="_blank" rel="noreferrer">
-                          {ver.fileName || ver.attachmentUrl}
-                        </a>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => handleVersionDownload(ver)}
+                        >
+                          {ver.fileName || '下载此版本附件'} {ver.fileSize ? `(${formatFileSize(ver.fileSize)})` : ''}
+                        </Button>
                       </Paragraph>
                     )}
 

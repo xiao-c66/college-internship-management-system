@@ -41,6 +41,7 @@ import {
   SwapOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import {
   getMyApply,
   getApplyById,
@@ -52,6 +53,10 @@ import {
   ApplyVO,
   AuditHistoryVO
 } from '../../api/apply';
+import {
+  getSafetyStatus,
+  SafetyStatusVO
+} from '../../api/safety';
 import {
   listApplyChangesApi,
   getActiveApplyChangeApi,
@@ -86,6 +91,7 @@ export const getApplyStatusTag = (status?: string) => {
 };
 
 export const ApplyPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user, userType } = useAuthStore();
   const isStudent = userType === 'STUDENT';
   const isTeacher = userType === 'TEACHER';
@@ -99,6 +105,7 @@ export const ApplyPage: React.FC = () => {
 
   // 学生端特有状态
   const [studentApply, setStudentApply] = useState<ApplyVO | null>(null);
+  const [safetyStatus, setSafetyStatus] = useState<SafetyStatusVO | null>(null);
   const [studentForm] = Form.useForm();
   const [saveLoading, setSaveLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -167,11 +174,17 @@ export const ApplyPage: React.FC = () => {
     fetchTasks();
   }, []);
 
-  // 2. 加载学生自身申报
+  // 2. 加载学生自身申报与安全教育状态
   const loadStudentApply = async (taskId: number) => {
     setLoading(true);
     try {
-      const res = await getMyApply(taskId);
+      const [res, safetyRes] = await Promise.all([
+        getMyApply(taskId),
+        getSafetyStatus(taskId)
+      ]);
+      if (safetyRes.code === 200 && safetyRes.data) {
+        setSafetyStatus(safetyRes.data);
+      }
       if (res.code === 200 && res.data) {
         setStudentApply(res.data);
         studentForm.setFieldsValue({
@@ -259,8 +272,10 @@ export const ApplyPage: React.FC = () => {
         message.success('申报草稿暂存成功 (APPLY-006)');
         loadStudentApply(selectedTaskId);
       }
-    } catch {}
-    finally {
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '申报草稿暂存失败';
+      message.error(errMsg);
+    } finally {
       setSaveLoading(false);
     }
   };
@@ -291,8 +306,10 @@ export const ApplyPage: React.FC = () => {
         message.success('实习申报已正式提交，进入指导教师初审队列');
         loadStudentApply(selectedTaskId);
       }
-    } catch {}
-    finally {
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '提交申报失败';
+      message.error(errMsg);
+    } finally {
       setSubmitLoading(false);
     }
   };
@@ -623,6 +640,27 @@ export const ApplyPage: React.FC = () => {
               icon={<CloseCircleOutlined />}
               message="⚠️ 您的实习申报被退回修改"
               description="请查看右侧流转轨迹中的退回意见，修改完善申报信息后重新提交审核。"
+            />
+          )}
+
+          {/* 安全教育准入前置硬性约束提示 (SAFE-010) */}
+          {safetyStatus && safetyStatus.statusCode !== 'COMPLETED' && (
+            <Alert
+              type="warning"
+              showIcon
+              icon={<ExclamationCircleOutlined />}
+              message={`安全准入前置要求未达成（当前状态：${safetyStatus.statusDesc || '未完成'}）`}
+              description={
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
+                  <span>
+                    根据高校实习安全管理规定，学生必须先完成安全教育全套要求（全部规程材料已读、准入考核及格并签署责任承诺书），方可正式提交实习申报。当前阶段允许保存草稿。
+                  </span>
+                  <Button type="primary" size="small" onClick={() => navigate('/safety')}>
+                    前往安全教育准入
+                  </Button>
+                </div>
+              }
+              style={{ marginBottom: 16 }}
             />
           )}
 

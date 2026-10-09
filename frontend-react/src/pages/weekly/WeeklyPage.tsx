@@ -23,7 +23,8 @@ import {
   Divider,
   Statistic,
   Empty,
-  DatePicker
+  DatePicker,
+  Alert
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -77,6 +78,7 @@ const getReportStatusTag = (status: string, isOverdue?: number) => {
         </Space>
       );
     case 'REVIEWED':
+    case 'APPROVED':
       return <Tag color="success">已批阅归档</Tag>;
     case 'RETURNED':
       return <Tag color="warning">退回整改</Tag>;
@@ -121,6 +123,7 @@ export const WeeklyPage: React.FC = () => {
 
   // 3. 周报编辑 Drawer 状态
   const [editDrawerVisible, setEditDrawerVisible] = useState(false);
+  const [editingReport, setEditingReport] = useState<WeeklyReportDetailVO | null>(null);
   const [editForm] = Form.useForm();
   const [saveLoading, setSaveLoading] = useState(false);
 
@@ -235,27 +238,43 @@ export const WeeklyPage: React.FC = () => {
   };
 
   // 学生新建/修改周报
-  const handleOpenEdit = (existing?: WeeklyReportVO) => {
+  const handleOpenEdit = async (existing?: WeeklyReportVO) => {
     editForm.resetFields();
     if (existing) {
-      editForm.setFieldsValue({
-        weekNumber: existing.weekNumber,
-        workContent: (existing as any).workContent || '负责微服务核心业务接口编写与单元测试开发',
-        workSummary: (existing as any).workSummary || '熟悉了Spring Boot业务研发规约，完成阶段技术指标',
-        problemEncountered: (existing as any).problemEncountered || '暂无重大技术阻碍',
-        nextWeekPlan: (existing as any).nextWeekPlan || '跟进联调测试与导师日常指导要求',
-        attachmentUrl: (existing as any).attachmentUrl || ''
-      });
-    } else {
-      const nextWeek = reports.length + 1;
-      editForm.setFieldsValue({
-        weekNumber: nextWeek,
-        workContent: '',
-        workSummary: '',
-        problemEncountered: '',
-        nextWeekPlan: ''
-      });
+      try {
+        const res = await getWeeklyReportDetail(existing.id);
+        if (res.code === 200 && res.data) {
+          const detail = res.data;
+          setEditingReport(detail);
+          editForm.setFieldsValue({
+            weekNumber: detail.weekNumber,
+            workContent: detail.workContent || '',
+            workSummary: detail.workSummary || '',
+            problemEncountered: detail.problemEncountered || '',
+            nextWeekPlan: detail.nextWeekPlan || '',
+            attachmentUrl: detail.attachmentUrl || ''
+          });
+          setEditDrawerVisible(true);
+          return;
+        }
+      } catch (err: any) {
+        message.error(err.message || '加载周报详情失败');
+      }
     }
+    setEditingReport(null);
+    const existingWeeks = reports.map((r) => r.weekNumber);
+    let nextWeek = 1;
+    while (existingWeeks.includes(nextWeek)) {
+      nextWeek++;
+    }
+    editForm.setFieldsValue({
+      weekNumber: nextWeek,
+      workContent: '',
+      workSummary: '',
+      problemEncountered: '',
+      nextWeekPlan: '',
+      attachmentUrl: ''
+    });
     setEditDrawerVisible(true);
   };
 
@@ -273,15 +292,18 @@ export const WeeklyPage: React.FC = () => {
         workSummary: values.workSummary,
         problemEncountered: values.problemEncountered,
         nextWeekPlan: values.nextWeekPlan,
-        attachmentUrl: values.attachmentUrl || '/uploads/weekly/report_attachment.pdf'
+        attachmentUrl: values.attachmentUrl || ''
       });
       if (res.code === 200) {
         message.success(action === 'DRAFT' ? '周报草稿暂存成功' : '周报已正式提交导师批阅');
         setEditDrawerVisible(false);
+        setEditingReport(null);
         loadReports(selectedTaskId, statusFilter);
       }
-    } catch {}
-    finally {
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err.message || (action === 'DRAFT' ? '周报草稿暂存失败' : '周报提交失败'));
+    } finally {
       setSaveLoading(false);
     }
   };
@@ -294,7 +316,7 @@ export const WeeklyPage: React.FC = () => {
       setReviewLoading(true);
       const res = await reviewWeeklyReport(selectedReport.id, {
         action: values.action,
-        score: values.score,
+        score: values.action === 'APPROVE' ? values.score : undefined,
         reviewComment: values.reviewComment
       });
       if (res.code === 200) {
@@ -303,8 +325,10 @@ export const WeeklyPage: React.FC = () => {
         loadReports(selectedTaskId, statusFilter);
         loadMonitorData(selectedTaskId);
       }
-    } catch {}
-    finally {
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err.message || '批阅操作失败');
+    } finally {
       setReviewLoading(false);
     }
   };
@@ -897,21 +921,40 @@ export const WeeklyPage: React.FC = () => {
             {selectedReport.historyList && selectedReport.historyList.length > 0 && (
               <Card size="small" title={<span><HistoryOutlined /> 历史版本快照归档</span>}>
                 <Timeline
-                  items={selectedReport.historyList.map((h) => ({
-                    children: (
-                      <div>
-                        <strong>版本 v{h.version}</strong> - {h.submitTime || h.createTime}
-                        <div style={{ fontSize: 13, color: '#595959', marginTop: 4 }}>
-                          工作摘要: {h.workSummary?.slice(0, 60)}...
+                  items={selectedReport.historyList.map((h) => {
+                    const isSubmit = h.action === 'SUBMIT';
+                    const isReturn = h.action === 'RETURN';
+                    const isApprove = h.action === 'APPROVE';
+                    let actionTag = <Tag color="blue">{h.action}</Tag>;
+                    if (isSubmit) actionTag = <Tag color="blue">学生提交 (v{h.version})</Tag>;
+                    if (isReturn) actionTag = <Tag color="warning">导师退回整改</Tag>;
+                    if (isApprove) actionTag = <Tag color="success">导师批阅通过 ({h.score}分)</Tag>;
+
+                    return {
+                      color: isApprove ? 'green' : isReturn ? 'orange' : 'blue',
+                      children: (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <Space size="small">
+                            {actionTag}
+                            <Text strong>{h.operatorName || '系统用户'}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              ({h.operatorRole || '-'}) · {h.operateTime || '-'}
+                            </Text>
+                          </Space>
+                          {h.returnReason && (
+                            <div style={{ fontSize: 13, color: '#fa8c16', backgroundColor: '#fffbe6', padding: '6px 10px', borderRadius: 4 }}>
+                              <strong>退回整改要求：</strong>{h.returnReason}
+                            </div>
+                          )}
+                          {h.reviewComment && (
+                            <div style={{ fontSize: 13, color: '#389e0d', backgroundColor: '#f6ffed', padding: '6px 10px', borderRadius: 4 }}>
+                              <strong>导师审阅评语：</strong>{h.reviewComment}
+                            </div>
+                          )}
                         </div>
-                        {h.reviewComment && (
-                          <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2 }}>
-                            历史批语: {h.reviewComment} (得分: {h.score ?? '-'})
-                          </div>
-                        )}
-                      </div>
-                    )
-                  }))}
+                      )
+                    };
+                  })}
                 />
               </Card>
             )}
@@ -969,19 +1012,39 @@ export const WeeklyPage: React.FC = () => {
 
       {/* 学生周报撰写/修改抽屉 */}
       <Drawer
-        title="撰写/修改实习周报"
+        title={editingReport ? `修改实习周报 (第 ${editingReport.weekNumber} 周 · v${editingReport.version})` : '撰写实习周报'}
         width={680}
         open={editDrawerVisible}
-        onClose={() => setEditDrawerVisible(false)}
+        onClose={() => {
+          setEditDrawerVisible(false);
+          setEditingReport(null);
+        }}
         destroyOnClose
       >
         <Form form={editForm} layout="vertical">
+          {editingReport && editingReport.status === 'RETURNED' && (
+            <Alert
+              type="warning"
+              showIcon
+              message={
+                <span>
+                  <strong>指导教师退回整改意见</strong>
+                  {editingReport.teacherName ? `（${editingReport.teacherName}）` : ''}
+                  {editingReport.reviewTime ? ` · ${editingReport.reviewTime}` : ''}
+                </span>
+              }
+              description={editingReport.reviewComment || '请认真对照指导教师要求整改后重新提交。'}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           <Form.Item
             name="weekNumber"
             label="所属实习周次"
             rules={[{ required: true, message: '请选择实习周次' }]}
           >
             <Select
+              disabled={!!editingReport}
               options={Array.from({ length: 20 }, (_, i) => ({
                 label: `第 ${i + 1} 周`,
                 value: i + 1

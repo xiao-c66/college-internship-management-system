@@ -41,6 +41,7 @@ import {
   submitScore,
   auditScore,
   publishScores,
+  publishScore,
   submitAppeal,
   arbitrateAppeal,
   type ScoreSummaryVO,
@@ -204,8 +205,40 @@ export const ScorePage: React.FC = () => {
   };
 
   const canArbitrate = (row: ScoreSummaryVO) => {
-    if (row.status === 'PUBLICITY' && (isDeptAdmin || isAdmin)) return true;
+    if (row.status === 'PUBLICITY') {
+      if (isAdmin || isDeptAdmin) return true;
+      if (isTeacher && row.teacherId === currentUserId) return true;
+    }
     return false;
+  };
+
+  const canPublishScore = (row: ScoreSummaryVO) => {
+    if (row.status === 'DRAFT' || row.status === 'PENDING_AUDIT' || row.status === 'PENDING_PUBLICITY') {
+      if (isAdmin || isDeptAdmin) return true;
+      if (isTeacher && row.teacherId === currentUserId && row.id && row.id > 0) return true;
+    }
+    return false;
+  };
+
+  const handlePublishSingle = (row: ScoreSummaryVO) => {
+    Modal.confirm({
+      title: '发布实习成绩确认',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: `确定为学生【${row.studentName}】发布成绩公示？发布后学生可查看五维综合评分并启动法定申诉复核期。`,
+      okText: '立即发布',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await publishScore(row.id);
+          if (res.code === 200) {
+            message.success(`学生【${row.studentName}】的成绩已成功发布公示！`);
+            loadScoresData();
+          }
+        } catch (e: any) {
+          message.error(e?.message || '发布成绩失败');
+        }
+      }
+    });
   };
 
   const canStudentAppeal = (score: ScoreSummaryVO | null) => {
@@ -572,6 +605,16 @@ export const ScorePage: React.FC = () => {
               评定录入
             </Button>
           )}
+          {canPublishScore(row) && (
+            <Button
+              type="link"
+              size="small"
+              style={{ color: '#1677ff' }}
+              onClick={() => handlePublishSingle(row)}
+            >
+              发布成绩
+            </Button>
+          )}
           {canDeptAudit(row) && (
             <Button
               type="link"
@@ -608,9 +651,9 @@ export const ScorePage: React.FC = () => {
           </Text>
         </div>
         <Space>
-          {(isDeptAdmin || isAdmin) && (
+          {(isTeacher || isDeptAdmin || isAdmin) && (
             <Button type="primary" icon={<SendOutlined />} onClick={handleBatchPublish}>
-              发布成绩公示
+              批量发布公示
             </Button>
           )}
           <Button

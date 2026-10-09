@@ -126,7 +126,7 @@ export const LoginPage: React.FC = () => {
         fetchCaptcha();
       }
     } catch (err: any) {
-      message.error(err.message || '登录异常，请稍后重试');
+      // 错误提示已由 request.ts 统一根据后端错误详情弹出，此处仅刷新图形验证码
       fetchCaptcha();
     } finally {
       setLoading(false);

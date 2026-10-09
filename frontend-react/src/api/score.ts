@@ -114,6 +114,10 @@ export function publishScores(taskId: number) {
   return request.post<any, ApiResult<void>>(`/score/tasks/${taskId}/publicity`);
 }
 
+export function publishScore(id: number) {
+  return request.post<any, ApiResult<void>>(`/score/summaries/${id}/publish`);
+}
+
 export function submitAppeal(data: ScoreAppealDTO) {
   return request.post<any, ApiResult<number>>('/score/appeals', data);
 }

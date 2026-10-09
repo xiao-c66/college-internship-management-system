@@ -10,6 +10,8 @@ export interface TaskItem {
   academicYear: string;
   semester: number;
   internshipMode: string;
+  assignMode?: string;
+  studentIds?: number[];
   startDate: string;
   endDate: string;
   weightEnterprise: number;
@@ -18,7 +20,7 @@ export interface TaskItem {
   weightStageMaterial: number;
   weightSummary: number;
   materialChecklist?: string;
-  weeklyFrequency: string;
+  weeklyFrequency?: string;
   weeklyDeadlineDay?: number;
   safetyPassingScore: number;
   safetyMaxAttempts: number;
@@ -54,11 +56,13 @@ export interface TeacherSimpleItem {
 }
 
 export interface TaskCreateOrUpdateParams {
-  taskCode?: string;
+  taskCode: string;
   taskName: string;
   academicYear: string;
   semester: number;
   internshipMode: string;
+  assignMode: string;
+  studentIds?: number[];
   startDate: string;
   endDate: string;
   weightEnterprise: number;
@@ -66,10 +70,14 @@ export interface TaskCreateOrUpdateParams {
   weightWeeklyReport: number;
   weightStageMaterial: number;
   weightSummary: number;
-  weeklyFrequency: string;
-  safetyPassingScore: number;
-  safetyMaxAttempts: number;
+  materialChecklist?: string;
+  weeklyFrequency?: string;
+  weeklyDeadlineDay?: number;
+  safetyPassingScore?: number;
+  safetyMaxAttempts?: number;
   deptId?: number;
+  majorIds?: number[];
+  classIds?: number[];
 }
 
 // 1. 获取任务列表 (分角色过滤)
@@ -115,4 +123,14 @@ export function getAvailableTeachers(id: number) {
 // 9. 指派指导教师
 export function assignTeacher(id: number, data: { teacherId: number; studentIds: number[] }) {
   return request.post<any, ApiResult<null>>(`/tasks/${id}/assign-teacher`, data);
+}
+
+// 10. 任务生命周期状态变更
+export function changeTaskLifecycle(id: number, data: { action: 'REVOKE' | 'DISABLE' | 'ARCHIVE'; reason: string }) {
+  return request.post<any, ApiResult<null>>(`/tasks/${id}/lifecycle`, data);
+}
+
+// 11. 手工调整任务名单
+export function adjustTaskStudents(id: number, data: { action: 'ADD' | 'REMOVE'; studentIds: number[]; reason: string }) {
+  return request.post<any, ApiResult<null>>(`/tasks/${id}/students/adjust`, data);
 }

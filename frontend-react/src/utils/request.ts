@@ -60,16 +60,26 @@ request.interceptors.response.use(
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
+    } else if (error.response?.status === 400) {
+      const errMsg = error.response?.data?.message || '请求参数错误或登录认证失败 (400)';
+      message.error(errMsg);
+      return Promise.reject(new Error(errMsg));
     } else if (error.response?.status === 403) {
-      message.error(error.response?.data?.message || '您无权执行此操作或访问该范围数据 (403)');
+      const errMsg = error.response?.data?.message || '您无权执行此操作或访问该范围数据 (403)';
+      message.error(errMsg);
+      return Promise.reject(new Error(errMsg));
     } else if (error.response?.status === 404) {
       message.error('请求的目标资源不存在 (404)');
+      return Promise.reject(new Error('请求的目标资源不存在 (404)'));
     } else if (error.response?.status >= 500) {
-      message.error(error.response?.data?.message || '后端服务异常，请稍后重试 (500)');
+      const errMsg = error.response?.data?.message || '后端服务异常，请稍后重试 (500)';
+      message.error(errMsg);
+      return Promise.reject(new Error(errMsg));
     } else {
-      message.error(error.message || '网络连接异常，请检查网络');
+      const errMsg = error.response?.data?.message || error.message || '网络连接异常，请检查网络';
+      message.error(errMsg);
+      return Promise.reject(new Error(errMsg));
     }
-    return Promise.reject(error);
   }
 );
 

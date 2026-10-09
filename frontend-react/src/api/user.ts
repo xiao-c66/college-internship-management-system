@@ -128,3 +128,13 @@ export function resetForgotPasswordApi(data: {
 }) {
   return request.post<any, ApiResult<null>>('/users/forgot-password/verify-and-reset', data);
 }
+
+export function getDepartmentsApi() {
+  return request.get<any, ApiResult<any[]>>('/users/departments');
+}
+export function getMajorsApi(deptId?: number) {
+  return request.get<any, ApiResult<any[]>>('/users/majors', { params: { deptId } });
+}
+export function getClassesApi(majorId?: number) {
+  return request.get<any, ApiResult<any[]>>('/users/classes', { params: { majorId } });
+}

@@ -12,4 +12,5 @@ public class MaterialSubmitDTO {
     private String attachmentUrl;
     private String fileName;
     private Long fileSize;
+    private String fileHash;
 }

@@ -76,4 +76,31 @@ public class MaterialController {
         List<MaterialVersionVO> list = materialService.getMaterialVersions(id, loginUser);
         return Result.success(list);
     }
+
+    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "上传阶段材料附件与计算防篡改哈希")
+    public Result<com.college.internship.vo.MaterialUploadVO> uploadMaterialFile(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("taskId") Long taskId,
+            @RequestParam(value = "materialCode", required = false) String materialCode,
+            @AuthenticationPrincipal LoginUser loginUser) {
+        com.college.internship.vo.MaterialUploadVO vo = materialService.uploadMaterialFile(file, taskId, materialCode, loginUser);
+        return Result.success(vo);
+    }
+
+    @GetMapping("/{id}/download")
+    @Operation(summary = "下载阶段材料最新附件")
+    public void downloadMaterialFile(@PathVariable("id") Long id,
+                                     jakarta.servlet.http.HttpServletResponse response,
+                                     @AuthenticationPrincipal LoginUser loginUser) {
+        materialService.downloadMaterialFile(id, response, loginUser);
+    }
+
+    @GetMapping("/versions/{versionId}/download")
+    @Operation(summary = "下载阶段材料历史版本附件")
+    public void downloadVersionFile(@PathVariable("versionId") Long versionId,
+                                    jakarta.servlet.http.HttpServletResponse response,
+                                    @AuthenticationPrincipal LoginUser loginUser) {
+        materialService.downloadVersionFile(versionId, response, loginUser);
+    }
 }

@@ -27,6 +27,7 @@ public class InternshipTask extends BaseEntity {
     private String academicYear;
     private Integer semester;
     private String internshipMode;
+    private String assignMode;
     private LocalDate startDate;
     private LocalDate endDate;
     private BigDecimal weightEnterprise;
